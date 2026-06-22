@@ -13,7 +13,7 @@ find_package(ament_cmake REQUIRED)
 find_package(urdf_tutorial REQUIRED)
 find_package(xacro REQUIRED)
 
-install(DIRECTORY urdf launch
+install(DIRECTORY urdf launch config worlds
   DESTINATION share/${PROJECT_NAME}
 )
 

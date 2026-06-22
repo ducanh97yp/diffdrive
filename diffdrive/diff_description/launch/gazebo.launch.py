@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction
+from launch.actions import ExecuteProcess
 from launch.substitutions import Command, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 from launch_ros.actions import Node
@@ -13,16 +13,19 @@ def generate_launch_description():
 
     robot_description = {'robot_description': Command(['xacro ', xacro_file])}
 
+    # Gazebo server with world file
     gz_server = GzServer(
         world_sdf_file=world_file,
         verbosity_level='4',
     )
 
+    # Gazebo client GUI
     gz_client = ExecuteProcess(
         cmd=['gz', 'sim', '-g'],
         output='screen',
     )
 
+    # Robot state publisher
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -31,45 +34,8 @@ def generate_launch_description():
         parameters=[robot_description, {'use_sim_time': True}],
     )
 
-    spawn_robot_node = TimerAction(
-        period=3.0,
-        actions=[
-            Node(
-                package='ros_gz_sim',
-                executable='create',
-                name='spawn_diff_robot',
-                output='screen',
-                arguments=[
-                    '-topic', 'robot_description',
-                    '-name', 'diff_robot',
-                    '-x', '0.0',
-                    '-y', '0.0',
-                    '-z', '0.1',
-                ],
-            )
-        ],
-    )
-
-    joint_state_publisher_gui_node = Node(
-        package='joint_state_publisher_gui',
-        executable='joint_state_publisher_gui',
-        name='joint_state_publisher_gui',
-        output='screen',
-    )
-
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='screen',
-        arguments=['-d', ''],
-    )
-
     return LaunchDescription([
         gz_server,
         gz_client,
         robot_state_publisher_node,
-        spawn_robot_node,
-        joint_state_publisher_gui_node,
-        rviz_node,
     ])
