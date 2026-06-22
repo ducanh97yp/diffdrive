@@ -8,14 +8,17 @@ from ros_gz_sim.actions import GzServer
 
 
 def generate_launch_description():
+    # Lay duong dan trong package sau khi da build/install.
     pkg_share = FindPackageShare('diff_description')
     world_file = PathJoinSubstitution([pkg_share, 'worlds', 'diff_description.world'])
     xacro_file = PathJoinSubstitution([pkg_share, 'urdf', 'robot.urdf.xacro'])
     controller_config = PathJoinSubstitution([pkg_share, 'config', 'my_controllers.yaml'])
     rviz_config = PathJoinSubstitution([pkg_share, 'config', 'robot.rviz'])
 
+    # robot_state_publisher nhan robot_description dang URDF, nen can chay xacro truoc.
     robot_description = {'robot_description': Command(['xacro ', xacro_file])}
 
+    # Gazebo Sim server chay physics/world; client la cua so GUI.
     gz_server = GzServer(
         world_sdf_file=world_file,
         verbosity_level='4',
@@ -26,6 +29,7 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Dong bo thoi gian Gazebo -> ROS. Quan trong khi cac node dung use_sim_time.
     clock_bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -34,6 +38,7 @@ def generate_launch_description():
         arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
     )
 
+    # Publish TF cho cac link cua robot tu robot_description va /joint_states.
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -42,6 +47,8 @@ def generate_launch_description():
         parameters=[robot_description, {'use_sim_time': True}],
     )
 
+    # RViz can /joint_states de hien cac joint dong nhu 2 banh xe.
+    # joint_broad publish topic rieng /joint_broad/joint_states, node nay merge ra /joint_states.
     joint_state_publisher_node = Node(
         package='joint_state_publisher',
         executable='joint_state_publisher',
@@ -56,6 +63,8 @@ def generate_launch_description():
         ],
     )
 
+    # teleop_twist_keyboard mac dinh publish Twist tren /cmd_vel.
+    # diff_drive_controller tren Jazzy dang nhan TwistStamped, nen can node chuyen doi nay.
     cmd_vel_stamper_node = Node(
         package='diff_description',
         executable='cmd_vel_stamper.py',
@@ -64,6 +73,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],
     )
 
+    # Dua robot_description vao Gazebo thanh mot model co ten diff_robot.
     spawn_robot_node = Node(
         package='ros_gz_sim',
         executable='create',
@@ -78,11 +88,13 @@ def generate_launch_description():
         ],
     )
 
+    # Cho Gazebo va robot_state_publisher khoi dong truoc khi spawn model.
     delayed_spawn_robot = TimerAction(
         period=3.0,
         actions=[spawn_robot_node],
     )
 
+    # joint_broad doc state interface cua cac joint va tao du lieu banh xe cho RViz.
     joint_broad_spawner = Node(
         package='controller_manager',
         executable='spawner',
@@ -91,6 +103,8 @@ def generate_launch_description():
         arguments=['joint_broad', '--controller-manager-timeout', '60'],
     )
 
+    # diff_cont nhan lenh van toc va dieu khien left_wheel_joint/right_wheel_joint.
+    # Remap ~/cmd_vel sang /cmd_vel_stamped vi lenh da duoc dong dau thoi gian.
     diff_cont_spawner = Node(
         package='controller_manager',
         executable='spawner',
@@ -107,6 +121,7 @@ def generate_launch_description():
         ],
     )
 
+    # Chi spawn controller sau khi Gazebo da tao xong robot, tranh loi khong thay hardware.
     spawn_joint_broad_after_robot = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=spawn_robot_node,
@@ -114,6 +129,7 @@ def generate_launch_description():
         )
     )
 
+    # Kich hoat diff drive sau joint_state_broadcaster de RViz co joint state som.
     spawn_diff_cont_after_joint_broad = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=joint_broad_spawner,
@@ -121,6 +137,7 @@ def generate_launch_description():
         )
     )
 
+    # Node GUI nay chi can khi muon dieu khien joint bang slider, khong can khi chay Gazebo.
     joint_state_publisher_gui_node = Node(
         package='joint_state_publisher_gui',
         executable='joint_state_publisher_gui',
@@ -128,6 +145,7 @@ def generate_launch_description():
         output='screen',
     )
 
+    # RViz dung config co Fixed Frame = odom de thay robot di chuyen theo odometry.
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',

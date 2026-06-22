@@ -33,6 +33,7 @@
     </xacro:unless> -->
 
     <xacro:if value="$(arg sim_mode)">
+        <!-- Hardware interface dung cho Gazebo Sim (ros_gz/gz_ros2_control), khong phai Gazebo Classic. -->
         <ros2_control name="GazeboSimSystem" type="system">
             <hardware>
                 <plugin>gz_ros2_control/GazeboSimSystem</plugin>
@@ -57,6 +58,7 @@
     </xacro:if>
 
     <gazebo>
+        <!-- System plugin tao controller_manager ben trong Gazebo Sim va nap cac file YAML controller. -->
         <plugin name="gz_ros2_control::GazeboSimROS2ControlPlugin" filename="gz_ros2_control-system">
             <parameters>$(find diff_description)/config/my_controllers.yaml</parameters>
             <parameters>$(find diff_description)/config/gaz_ros2_ctl_use_sim.yaml</parameters>
