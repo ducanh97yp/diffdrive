@@ -25,8 +25,9 @@ diff_cont:
     right_wheel_names: ['right_wheel_joint']
 
     # Kich thuoc thuc cua robot, dung de tinh odometry tu toc do banh.
-    wheel_separation: 0.185
-    wheel_radius: 0.033
+    # wheel_separation la khoang cach giua tam 2 banh.
+    wheel_separation: 0.471
+    wheel_radius: 0.0855
 
 
     open_loop: false    
