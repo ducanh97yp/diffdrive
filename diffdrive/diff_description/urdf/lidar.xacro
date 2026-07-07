@@ -7,26 +7,20 @@
         <origin xyz="0.1697 0 0.07363" rpy="3.14 0 0"/>
     </joint>
 
+    <!-- Kich thuoc xap xi Livox Mid-360 that - hinh tru phi65mm x cao 60.5mm, nang 265g. -->
     <link name="laser_frame">
         <visual>
             <geometry>
-                <cylinder radius="0.025" length="0.0432"/>
-            </geometry>
-            <material name="black"/>
-        </visual>
-        <visual>
-            <origin xyz="0 0 -0.009"/>
-            <geometry>
-                <cylinder radius="0.01" length="0.1"/>
+                <cylinder radius="0.0325" length="0.0605"/>
             </geometry>
             <material name="black"/>
         </visual>
         <collision>
             <geometry>
-                <cylinder radius="0.05" length="0.04"/>
+                <cylinder radius="0.0325" length="0.0605"/>
             </geometry>
         </collision>
-        <xacro:inertial_cylinder mass="0.1" length="0.04" radius="0.05">
+        <xacro:inertial_cylinder mass="0.265" length="0.0605" radius="0.0325">
             <origin xyz="0 0 0" rpy="0 0 0"/>
         </xacro:inertial_cylinder>
     </link>
@@ -36,23 +30,67 @@
     <gazebo reference="laser_frame">
         <material>Gazebo/Black</material>
 
+        <!-- Cau hinh xap xi Livox Mid-360 - FOV 360(H) x 59(V, -7~52 do), range 0.1-40m.
+             Mid-360 that quet non-repetitive (hoa van canh hoa) chu khong quet theo tung
+             line co dinh nhu gpu_lidar cua Gazebo, nen day chi la xap xi ve FOV, khong
+             phai mo phong dung kieu quet.
+             update_rate giam tu 10Hz (datasheet thuc) xuong 5Hz, va so dong quet doc giam
+             tu 56 xuong 24 (van giu FOV -7~52 do, chi giam mat do), de giam tai GPU
+             raycasting tren may khong co GPU roi - RTF thuc te truoc do <1 gay giat/lag va
+             RViz nhap nhay OK/Error o status Transform cua PointCloud2. Neu chay tren may
+             manh hon co the tang lai update_rate ve 10 va samples ve 56. -->
         <sensor name="laser" type="gpu_lidar">
             <pose> 0 0 0 0 0 0 </pose>
-            <visualize>false</visualize>
-            <update_rate>10</update_rate>
-            <ray>
+            <topic>scan</topic>
+            <gz_frame_id>laser_frame</gz_frame_id>
+            <visualize>true</visualize>
+            <always_on>true</always_on>
+            <update_rate>5</update_rate>
+            <lidar>
                 <scan>
                     <horizontal>
                         <samples>360</samples>
-                        <min_angle>-3.14</min_angle>
-                        <max_angle>3.14</max_angle>
+                        <resolution>1</resolution>
+                        <min_angle>-3.141592653589793</min_angle>
+                        <max_angle>3.141592653589793</max_angle>
                     </horizontal>
+                    <vertical>
+                        <samples>24</samples>
+                        <resolution>1</resolution>
+                        <min_angle>-0.12217304764</min_angle>
+                        <max_angle>0.90757121103</max_angle>
+                    </vertical>
                 </scan>
                 <range>
-                    <min>0.3</min>
-                    <max>12</max>
+                    <min>0.1</min>
+                    <max>40</max>
+                    <resolution>0.02</resolution>
                 </range>
-            </ray>
+            </lidar>
+        </sensor>
+
+        <!-- Mid-360 co IMU 6 truc (accel + gyro) tich hop san trong cung khoi, dat trung
+             goc voi lidar nen dung lai laser_frame, khong can link rieng. Update_rate
+             200Hz theo datasheet Mid-360. Noise la gia lap MEMS IMU thong dung, khong
+             lay tu thong so chinh xac cua Livox. -->
+        <sensor name="imu_sensor" type="imu">
+            <pose>0 0 0 0 0 0</pose>
+            <topic>imu</topic>
+            <gz_frame_id>laser_frame</gz_frame_id>
+            <always_on>true</always_on>
+            <update_rate>200</update_rate>
+            <imu>
+                <angular_velocity>
+                    <x><noise type="gaussian"><mean>0</mean><stddev>0.0003</stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0</mean><stddev>0.0003</stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0</mean><stddev>0.0003</stddev></noise></z>
+                </angular_velocity>
+                <linear_acceleration>
+                    <x><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></z>
+                </linear_acceleration>
+            </imu>
         </sensor>
     </gazebo>
 

@@ -32,6 +32,34 @@ def generate_launch_description():
 
     robot_description = {'robot_description': Command(['xacro ', xacro_file])}
 
+    clock_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='clock_bridge',
+        output='screen',
+        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+    )
+
+    points_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='lidar_points_bridge',
+        output='screen',
+        arguments=['/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked'],
+        remappings=[('/scan/points', '/points')],
+        parameters=[{'use_sim_time': True}],
+    )
+
+    # IMU tich hop san trong lidar Mid-360.
+    imu_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='imu_bridge',
+        output='screen',
+        arguments=['/imu@sensor_msgs/msg/Imu[gz.msgs.IMU'],
+        parameters=[{'use_sim_time': True}],
+    )
+
     gz_server = GzServer(
         world_sdf_file=world_file,
         verbosity_level='4',
@@ -114,6 +142,9 @@ def generate_launch_description():
         set_gz_sim_resource_path,
         set_gazebo_model_path,
         gz_server,
+        clock_bridge_node,
+        points_bridge_node,
+        imu_bridge_node,
         robot_state_publisher_node,
         spawn_robot_after_delay,
         launch_gui_after_spawn,

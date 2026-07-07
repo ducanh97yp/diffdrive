@@ -85,6 +85,30 @@ def generate_launch_description():
         arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
     )
 
+    # Lidar 3D (kieu Mid-360) quet nhieu vong doc nen du lieu dung dang PointCloud2,
+    # khong con la mot mat phang LaserScan don. Gz publish point cloud tren
+    # "<topic>/points" (topic sensor la "scan" nen gz topic la "scan/points"),
+    # remap sang /points cho gon.
+    points_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='lidar_points_bridge',
+        output='screen',
+        arguments=['/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked'],
+        remappings=[('/scan/points', '/points')],
+        parameters=[{'use_sim_time': True}],
+    )
+
+    # IMU tich hop san trong lidar Mid-360.
+    imu_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='imu_bridge',
+        output='screen',
+        arguments=['/imu@sensor_msgs/msg/Imu[gz.msgs.IMU'],
+        parameters=[{'use_sim_time': True}],
+    )
+
     # Publish TF cho cac link cua robot tu robot_description va /joint_states.
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
@@ -200,6 +224,8 @@ def generate_launch_description():
         set_gazebo_model_path,
         gz_server,
         clock_bridge_node,
+        points_bridge_node,
+        imu_bridge_node,
         robot_state_publisher_node,
         cmd_vel_stamper_node,
         spawn_robot_after_delay,
