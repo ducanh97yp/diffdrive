@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="aws_robomaker_residential_CookingBench_01">
+    <link name="link">
+      <inertial>
+        <mass>1</mass>
+      </inertial>
+      <collision name="collision">
+        <pose>0.000084 -0.000486 0.048957 0 0 0</pose>
+        <geometry>
+          <box><size>0.545529 1.003430 0.097915</size></box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+	    <geometry>
+          <mesh>
+            <uri>model://aws_robomaker_residential_CookingBench_01/meshes/aws_CookingBench_01_visual.DAE</uri>
+          </mesh>
+        </geometry>
+      <meta> <layer> 1 </layer></meta>
+</visual>
+    </link>
+  </model>
+</sdf>

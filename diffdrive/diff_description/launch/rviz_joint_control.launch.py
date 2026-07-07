@@ -1,19 +1,37 @@
+import os
+from os import path
+
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, RegisterEventHandler, TimerAction
+from launch.actions import ExecuteProcess, RegisterEventHandler, SetEnvironmentVariable, TimerAction
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, PathJoinSubstitution
-from launch_ros.substitutions import FindPackageShare
+from launch.substitutions import Command
 from launch_ros.actions import Node
 from ros_gz_sim.actions import GzServer
 
 
 def generate_launch_description():
     # Lay duong dan trong package sau khi da build/install.
-    pkg_share = FindPackageShare('diff_description')
-    world_file = PathJoinSubstitution([pkg_share, 'worlds', 'diff_description.world'])
-    xacro_file = PathJoinSubstitution([pkg_share, 'urdf', 'robot.urdf.xacro'])
-    controller_config = PathJoinSubstitution([pkg_share, 'config', 'my_controllers.yaml'])
-    rviz_config = PathJoinSubstitution([pkg_share, 'config', 'robot.rviz'])
+    pkg_share = get_package_share_directory('diff_description')
+    world_file = path.join(pkg_share, 'worlds', 'house.world')
+    xacro_file = path.join(pkg_share, 'urdf', 'robot.urdf.xacro')
+    controller_config = path.join(pkg_share, 'config', 'my_controllers.yaml')
+    rviz_config = path.join(pkg_share, 'config', 'robot.rviz')
+    model_path = path.join(pkg_share, 'models')
+
+    existing_resource_path = os.environ.get('GZ_SIM_RESOURCE_PATH', '')
+    gz_sim_resource_value = model_path + (os.pathsep + existing_resource_path if existing_resource_path else '')
+    set_gz_sim_resource_path = SetEnvironmentVariable(
+        name='GZ_SIM_RESOURCE_PATH',
+        value=gz_sim_resource_value,
+    )
+
+    existing_gz = os.environ.get('GAZEBO_MODEL_PATH', '')
+    gazebo_model_path_value = model_path + (os.pathsep + existing_gz if existing_gz else '')
+    set_gazebo_model_path = SetEnvironmentVariable(
+        name='GAZEBO_MODEL_PATH',
+        value=gazebo_model_path_value,
+    )
 
     # robot_state_publisher nhan robot_description dang URDF, nen can chay xacro truoc.
     robot_description = {'robot_description': Command(['xacro ', xacro_file])}
@@ -24,9 +42,38 @@ def generate_launch_description():
         verbosity_level='4',
     )
 
+    def _sanitize_snap_paths(value: str) -> str:
+        return ':'.join(
+            part for part in value.split(':')
+            if '/snap/' not in part and 'snap/code' not in part
+        )
+
+    gui_env = os.environ.copy()
+    if 'LD_LIBRARY_PATH' in gui_env:
+        gui_env['LD_LIBRARY_PATH'] = _sanitize_snap_paths(gui_env['LD_LIBRARY_PATH'])
+    if 'PATH' in gui_env:
+        gui_env['PATH'] = _sanitize_snap_paths(gui_env['PATH'])
+    if 'XDG_DATA_DIRS' in gui_env:
+        gui_env['XDG_DATA_DIRS'] = _sanitize_snap_paths(gui_env['XDG_DATA_DIRS'])
+    if 'XDG_CONFIG_DIRS' in gui_env:
+        gui_env['XDG_CONFIG_DIRS'] = _sanitize_snap_paths(gui_env['XDG_CONFIG_DIRS'])
+    for key in list(gui_env):
+        if key.startswith('SNAP') or 'VSCODE_SNAP' in key or key == 'LD_PRELOAD':
+            gui_env.pop(key, None)
+        elif key in {
+            'GTK_PATH',
+            'GIO_MODULE_DIR',
+            'GTK_EXE_PREFIX',
+            'GTK_IM_MODULE_FILE',
+        }:
+            gui_env.pop(key, None)
+        elif key == 'XDG_DATA_HOME' and gui_env.get(key, '').startswith('/home') and '/snap/' in gui_env[key]:
+            gui_env.pop(key, None)
+
     gz_client = ExecuteProcess(
         cmd=['gz', 'sim', '-g'],
         output='screen',
+        env=gui_env,
     )
 
     # Dong bo thoi gian Gazebo -> ROS. Quan trong khi cac node dung use_sim_time.
@@ -47,22 +94,6 @@ def generate_launch_description():
         parameters=[robot_description, {'use_sim_time': True}],
     )
 
-    # RViz can /joint_states de hien cac joint dong nhu 2 banh xe.
-    # joint_broad publish topic rieng /joint_broad/joint_states, node nay merge ra /joint_states.
-    joint_state_publisher_node = Node(
-        package='joint_state_publisher',
-        executable='joint_state_publisher',
-        name='joint_state_publisher',
-        output='screen',
-        parameters=[
-            {
-                'source_list': ['/joint_broad/joint_states'],
-                'rate': 30,
-                'use_sim_time': True,
-            }
-        ],
-    )
-
     # teleop_twist_keyboard mac dinh publish Twist tren /cmd_vel.
     # diff_drive_controller tren Jazzy dang nhan TwistStamped, nen can node chuyen doi nay.
     cmd_vel_stamper_node = Node(
@@ -80,18 +111,30 @@ def generate_launch_description():
         name='spawn_diff_robot',
         output='screen',
         arguments=[
-            '-topic', 'robot_description',
+            '-world', 'default',
+            '-string', Command(['xacro ', xacro_file]),
             '-name', 'diff_robot',
-            '-x', '0.0',
+            '-allow_renaming', 'true',
+            '-x', '1.0',
             '-y', '0.0',
-            '-z', '0.1',
+            '-z', '0.5',
         ],
     )
 
-    # Cho Gazebo va robot_state_publisher khoi dong truoc khi spawn model.
-    delayed_spawn_robot = TimerAction(
+    # Spawn the robot after a short delay so Gazebo can initialize.
+    spawn_robot_after_delay = TimerAction(
         period=3.0,
         actions=[spawn_robot_node],
+    )
+
+    # Neu GUI mo truoc khi robot duoc spawn, no se khong tu dong nhan entity moi
+    # (gioi han cua gz-sim), khien robot khong hien trong Gazebo. Nen chi mo GUI
+    # sau khi spawn_robot_node da chay xong.
+    launch_gui_after_spawn = RegisterEventHandler(
+        OnProcessExit(
+            target_action=spawn_robot_node,
+            on_exit=[gz_client],
+        )
     )
 
     # joint_broad doc state interface cua cac joint va tao du lieu banh xe cho RViz.
@@ -121,20 +164,16 @@ def generate_launch_description():
         ],
     )
 
-    # Chi spawn controller sau khi Gazebo da tao xong robot, tranh loi khong thay hardware.
-    spawn_joint_broad_after_robot = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=spawn_robot_node,
-            on_exit=[joint_broad_spawner],
-        )
+    # Spawn the joint state broadcaster after a delay to ensure the robot exists.
+    spawn_joint_broad_after_delay = TimerAction(
+        period=6.0,
+        actions=[joint_broad_spawner],
     )
 
-    # Kich hoat diff drive sau joint_state_broadcaster de RViz co joint state som.
-    spawn_diff_cont_after_joint_broad = RegisterEventHandler(
-        event_handler=OnProcessExit(
-            target_action=joint_broad_spawner,
-            on_exit=[diff_cont_spawner],
-        )
+    # Activate the diff drive controller after another short delay.
+    spawn_diff_cont_after_delay = TimerAction(
+        period=9.0,
+        actions=[diff_cont_spawner],
     )
 
     # Node GUI nay chi can khi muon dieu khien joint bang slider, khong can khi chay Gazebo.
@@ -153,18 +192,20 @@ def generate_launch_description():
         output='screen',
         arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': True}],
+        env=gui_env,
     )
 
     return LaunchDescription([
+        set_gz_sim_resource_path,
+        set_gazebo_model_path,
         gz_server,
-        gz_client,
         clock_bridge_node,
         robot_state_publisher_node,
-        joint_state_publisher_node,
         cmd_vel_stamper_node,
-        delayed_spawn_robot,
-        spawn_joint_broad_after_robot,
-        spawn_diff_cont_after_joint_broad,
+        spawn_robot_after_delay,
+        launch_gui_after_spawn,
+        spawn_joint_broad_after_delay,
+        spawn_diff_cont_after_delay,
         #joint_state_publisher_gui_node,
         rviz_node,
     ])

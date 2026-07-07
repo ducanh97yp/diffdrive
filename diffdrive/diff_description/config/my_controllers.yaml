@@ -17,7 +17,9 @@ diff_cont:
     # Jazzy diff_drive_controller dang nhan TwistStamped, nen /cmd_vel duoc chuyen
     # sang /cmd_vel_stamped boi scripts/cmd_vel_stamper.py.
     use_stamped_vel: true
-    publish_rate: 50.0
+    # publish_rate khong the vuot qua controller_manager.update_rate (30 Hz) o tren,
+    # de 50 la vo nghia (controller chi tinh duoc 30 lan/s).
+    publish_rate: 30.0
 
     # Ten frame phai trung voi URDF. Controller publish odom -> base_link.
     base_frame_id: base_link
@@ -71,9 +73,6 @@ diff_cont:
 
 
 
-
-joint_broad:
-  ros__parameters:
-    # Publish ra /joint_broad/joint_states thay vi /joint_states.
-    # launch se dung joint_state_publisher de merge topic nay ra /joint_states cho RViz.
-    use_local_topics: true
+# joint_broad khong can override param: mac dinh use_local_topics=false nen no da
+# publish thang ra /joint_states, khong can them node joint_state_publisher de
+# relay/merge nua - do bot mot hop topic va giam do tre.

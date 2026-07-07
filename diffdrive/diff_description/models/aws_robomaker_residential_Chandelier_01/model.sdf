@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="aws_robomaker_residential_Chandelier_01">
+    <link name="link">
+      <inertial>
+        <mass>1</mass>
+      </inertial>
+      <collision name="collision">
+        <pose>0.001882 -0.009374 0.482237 0 0 0</pose>
+        <geometry>
+          <box><size>0.923758 0.933699 0.991678</size></box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+	    <geometry>
+          <mesh>
+            <uri>model://aws_robomaker_residential_Chandelier_01/meshes/aws_Chandelier_01_visual.DAE</uri>
+          </mesh>
+        </geometry>
+      <meta> <layer> 2 </layer></meta>
+</visual>
+    </link>
+	<static>1</static>
+  </model>
+</sdf>

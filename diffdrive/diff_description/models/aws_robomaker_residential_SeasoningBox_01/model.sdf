@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="aws_robomaker_residential_SeasoningBox_01">
+    <link name="link">
+      <inertial>
+        <mass>1</mass>
+      </inertial>
+      <collision name="collision">
+        <pose>0.000338 0.000282 0.040869 0 0 0</pose>
+        <geometry>
+          <box><size>0.060609 0.308960 0.082857</size></box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+	    <geometry>
+          <mesh>
+            <uri>model://aws_robomaker_residential_SeasoningBox_01/meshes/aws_SeasoningBox_01_visual.DAE</uri>
+          </mesh>
+        </geometry>
+      <meta> <layer> 1 </layer></meta>
+</visual>
+    </link>
+  </model>
+</sdf>

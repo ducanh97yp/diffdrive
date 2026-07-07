@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="aws_robomaker_residential_Bed_01">
+    <link name="link">
+      <inertial>
+        <mass>22.6</mass>
+      </inertial>
+      <collision name="collision">
+        <pose>0.005591 0.002645 0.640885 0 0 0</pose>
+        <geometry>
+          <box><size>2.050563 2.009866 1.281771</size></box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+	    <geometry>
+          <mesh>
+            <uri>model://aws_robomaker_residential_Bed_01/meshes/aws_Bed_01_visual.DAE</uri>
+          </mesh>
+        </geometry>
+      <meta> <layer> 1 </layer></meta>
+</visual>
+    </link>
+  <static>1</static>
+  </model>
+</sdf>
