@@ -66,6 +66,13 @@ def generate_launch_description():
     # NOTE: the official ros-jazzy-mola-lidar-odometry apt package only ships
     # ros2-lidar-odometry.launch.py - the "-katana" variant was the original repo
     # author's unpublished personal fork and doesn't exist in this install.
+    #
+    # use_sim_time:=true is required here - ros2-lidar-odometry.launch.py defaults it
+    # to false, which made mola-cli (and its internal rviz2) stamp /tf with real
+    # wall-clock time while the rest of the graph (robot_state_publisher, diff_cont)
+    # uses sim time. That put two different time domains in the same tf buffer,
+    # breaking any tf2 lookup done against a sim-time message stamp (e.g.
+    # pointcloud_to_occupancygrid.py's lookup_transform against the lidar's stamp).
     slam_cmd = ExecuteProcess(
         cmd=['ros2', 'launch', "mola_lidar_odometry" ,
              'ros2-lidar-odometry.launch.py',
@@ -73,6 +80,7 @@ def generate_launch_description():
              'imu_topic_name:=/imu',
              'use_rviz:=true',
              'use_mola_gui:=true',
+             'use_sim_time:=true',
              'start_mapping_enabled:=true',
              'start_active:=true'],
         output='screen',

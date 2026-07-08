@@ -29,6 +29,7 @@ ament_python_install_package(${PROJECT_NAME})
 install(PROGRAMS
   mola_bringup/filterpass.py
   mola_bringup/plot_lidar_trajectory.py
+  mola_bringup/pointcloud_to_occupancygrid.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -50,6 +51,7 @@ install(TARGETS
 install(DIRECTORY
   # add directories here
   launch
+  config
   DESTINATION share/${PROJECT_NAME})
 
 ament_package()

@@ -49,6 +49,11 @@ def generate_launch_description():
     # separate "-localize-katana" launch file. The unified ros2-lidar-odometry.launch.py
     # handles both mapping and localization via start_mapping_enabled/enable_mapping and
     # the mola_initial_map_*_file args passed below.
+    #
+    # use_sim_time:=true is required - ros2-lidar-odometry.launch.py defaults it to
+    # false, which made mola-cli stamp /tf with real wall-clock time while the rest of
+    # the graph uses sim time, corrupting the tf buffer with two clock domains (breaks
+    # any tf2 lookup done against a sim-time message stamp).
     localize_cmd = ExecuteProcess(
         cmd=['ros2', 'launch', "mola_lidar_odometry" ,
              'ros2-lidar-odometry.launch.py',
@@ -56,6 +61,7 @@ def generate_launch_description():
              'imu_topic_name:=/imu',
              'use_rviz:=true',
              'use_mola_gui:=true',
+             'use_sim_time:=true',
              'start_mapping_enabled:=false',
              'start_active:=false',
              f"mola_initial_map_mm_file:={mm_map}",

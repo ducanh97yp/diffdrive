@@ -14,9 +14,16 @@ import time
 import tkinter as tk
 from tkinter import ttk
 import threading
+from collections import deque
 
-from std_msgs.msg import String  
+from std_msgs.msg import String
 import re
+
+# Moi tick (100ms) ve lai TOAN BO lich su (relim/autoscale/redraw tren 6 subplot), nen
+# neu list dai vo han thi chi phi moi tick tang dan theo thoi gian chay - chinh la
+# nguyen nhan "chay dung luc dau, sau mot luc thi dang do" (CPU bi chiem het, MOLA
+# khong theo kip scan moi). Gioi han lai bang deque de chi phi moi tick co dinh.
+TRAJECTORY_HISTORY_MAXLEN = 3000
 
 # Import MOLA service
 from mola_msgs.srv import MolaRuntimeParamSet
@@ -41,9 +48,13 @@ def quaternion_to_euler(x, y, z, w):
 class TrajectoryPlotter(Node):
     def __init__(self):
         super().__init__('trajectory_plotter')
-        self.x_data, self.y_data, self.z_data = [], [], []
-        self.roll_data, self.pitch_data, self.yaw_data = [], [], []
-        self.icp_quality_history = []  
+        self.x_data = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
+        self.y_data = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
+        self.z_data = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
+        self.roll_data = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
+        self.pitch_data = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
+        self.yaw_data = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
+        self.icp_quality_history = deque(maxlen=TRAJECTORY_HISTORY_MAXLEN)
         
         # Subscribe to odometry
         # NOTE: was '/state_estimator/pose' - that topic exists but nothing actually
