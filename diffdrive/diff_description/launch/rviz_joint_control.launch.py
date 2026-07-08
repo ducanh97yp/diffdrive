@@ -11,6 +11,12 @@ from ros_gz_sim.actions import GzServer
 
 
 def generate_launch_description():
+    # May nay dung chung mang LAN voi cac may khac cung mac dinh ROS_DOMAIN_ID=0, nen
+    # /tf, /robot_description, /joint_states bi lan sang node cua nguoi khac (thay mesh
+    # la, TF nhay lien tuc -> RViz nhap nhay do o Transform cua PointCloud2). Gan domain
+    # rieng (lay theo octet cuoi cua IP LAN cho it trung) de tach DDS multicast khoi ho.
+    os.environ['ROS_DOMAIN_ID'] = '161'
+
     # Lay duong dan trong package sau khi da build/install.
     pkg_share = get_package_share_directory('diff_description')
     world_file = path.join(pkg_share, 'worlds', 'house.world')
@@ -233,5 +239,5 @@ def generate_launch_description():
         spawn_joint_broad_after_delay,
         spawn_diff_cont_after_delay,
         #joint_state_publisher_gui_node,
-        rviz_node,
+        #rviz_node,
     ])
