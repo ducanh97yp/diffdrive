@@ -2,7 +2,13 @@ controller_manager:
   ros__parameters:
     # Tan so cap nhat controller. Nen gan voi physics/update rate cua mo phong.
     update_rate: 30
-    # use_sim_time: true
+    # Without this, diff_cont/joint_broad stamp their messages (incl. /diff_cont/odom)
+    # with wall-clock time while the rest of the graph (Gazebo bridges, MOLA, lidar,
+    # IMU) runs on sim time. Fusing that odom into StateEstimationSmoother produces a
+    # ~1.78e9 s "dT" between keyframes (real epoch time treated as a time delta),
+    # which blows up the GTSAM factor graph and crashes mola-cli within seconds
+    # (KeyError/"Index out of requested size range" in process_pending_gtsam_updates).
+    use_sim_time: true
 
     # diff_cont dieu khien 2 banh theo lenh van toc.
     diff_cont:

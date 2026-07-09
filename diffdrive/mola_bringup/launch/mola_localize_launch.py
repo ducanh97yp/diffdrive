@@ -42,8 +42,8 @@ def generate_launch_description():
     # Build your own map first with mola_slam_launch.py, save it via:
     #   ros2 service call /map_save mola_msgs/srv/MapSave "map_path: '/home/andy1/ws_ros2_test/maps/gazebo_house'"
     # which creates gazebo_house.mm/.simplemap at the paths below.
-    mm_map = '/home/andy1/ws_ros2_test/maps/myroom.mm'
-    simple_map = '/home/andy1/ws_ros2_test/maps/myroom.simplemap'
+    mm_map = '/home/andy1/ws_ros2_test/maps/mymap3.mm'
+    simple_map = '/home/andy1/ws_ros2_test/maps/mymap3.simplemap'
 
     # NOTE: same as mola_slam_launch.py - the official apt package doesn't ship a
     # separate "-localize-katana" launch file. The unified ros2-lidar-odometry.launch.py
@@ -64,6 +64,23 @@ def generate_launch_description():
              'use_sim_time:=true',
              'start_mapping_enabled:=false',
              'start_active:=false',
+             # Tried fusing wheel odom (/diff_cont/odom) + IMU + lidar ICP via
+             # use_state_estimator:=True/odom_topic_name:=/diff_cont/odom
+             # (StateEstimationSmoother) here. Reverted: reproducibly crashes
+             # mola-cli ~3s after start even with /diff_cont/odom correctly
+             # sim-time-stamped (confirmed via `ros2 topic echo /diff_cont/odom` vs
+             # /clock) and with only one Gazebo/mola stack running on the domain -
+             # StateEstimationSmoother logs "Constant-velocity kinematics factor
+             # added for large dT=<current wall-clock epoch> s" then a GTSAM
+             # "BayesTree clique" exception, which kills the whole mola-cli process
+             # (and, via on_exit=Shutdown() in ros2-lidar-odometry.launch.py's node
+             # group, RViz along with it - this is why RViz opened then closed).
+             # The bad huge dT isn't coming from our wheel odom topic (verified
+             # correctly stamped); it looks like an upstream StateEstimationSmoother
+             # issue anchoring its first keyframe to wall-clock time under
+             # use_sim_time. Not something fixable from this workspace's config -
+             # would need patching the vendored C++ source in
+             # MOLA-SLAM/mola_ws/src/MOLA-SLAM/src/mola_state_estimation/mola_state_estimation_smoother/.
              f"mola_initial_map_mm_file:={mm_map}",
              f"mola_initial_map_sm_file:={simple_map}"],
         output='screen',

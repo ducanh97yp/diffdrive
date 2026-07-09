@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import re
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -8,8 +9,11 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPo
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
 from nav_msgs.msg import OccupancyGrid
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 import tf2_ros
+
+_ICP_QUALITY_RE = re.compile(r"icp_quality:\s*([\d\.]+)")
 
 
 def quat_translation_to_matrix(t):
@@ -59,6 +63,11 @@ class PointCloudToOccupancyGrid(Node):
         # one-off noisy returns.
         self.declare_parameter('occ_hit_threshold', 2)
         self.declare_parameter('publish_rate_hz', 1.0)
+        # Below this, MOLA's own diagnostics say ICP tracking is unreliable (lost/
+        # relocalizing) - the map->lidar transform can be badly wrong then, so scans
+        # get dropped instead of smearing the same wall across multiple drifted poses
+        # (this is what produced the fan-of-duplicate-walls artifact in earlier maps).
+        self.declare_parameter('min_icp_quality', 0.7)
 
         input_topic = self.get_parameter('input_topic').value
         self.map_frame = self.get_parameter('map_frame').value
@@ -70,6 +79,10 @@ class PointCloudToOccupancyGrid(Node):
         self.min_height = float(self.get_parameter('min_height').value)
         self.max_height = float(self.get_parameter('max_height').value)
         self.occ_hit_threshold = int(self.get_parameter('occ_hit_threshold').value)
+        self.min_icp_quality = float(self.get_parameter('min_icp_quality').value)
+        # None means "no reading yet" - stay permissive rather than blocking the map
+        # before any diagnostics message has arrived.
+        self.icp_quality = None
 
         self.width_cells = max(1, int(round(self.width_m / self.resolution)))
         self.height_cells = max(1, int(round(self.height_m / self.resolution)))
@@ -79,6 +92,8 @@ class PointCloudToOccupancyGrid(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.create_subscription(PointCloud2, input_topic, self._cloud_callback, 10)
+        self.create_subscription(
+            String, '/mola_diagnostics/lidar_odom/status', self._status_callback, 10)
 
         map_qos = QoSProfile(
             depth=1,
@@ -99,7 +114,19 @@ class PointCloudToOccupancyGrid(Node):
             f"Height band kept: [{self.min_height}, {self.max_height}] m."
         )
 
+    def _status_callback(self, msg: String):
+        match = _ICP_QUALITY_RE.search(msg.data)
+        if match:
+            self.icp_quality = float(match.group(1))
+
     def _cloud_callback(self, msg: PointCloud2):
+        if self.icp_quality is not None and self.icp_quality < self.min_icp_quality:
+            self.get_logger().warn(
+                f"Skipping scan: icp_quality={self.icp_quality:.2f} < "
+                f"{self.min_icp_quality} (tracking unreliable, map->lidar transform "
+                f"can't be trusted right now)",
+                throttle_duration_sec=2.0)
+            return
         try:
             # Deliberately NOT looking up the transform at msg.header.stamp with a
             # blocking timeout: this callback runs on the same single-threaded
