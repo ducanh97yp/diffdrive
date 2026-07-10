@@ -42,8 +42,8 @@ def generate_launch_description():
     # Build your own map first with mola_slam_launch.py, save it via:
     #   ros2 service call /map_save mola_msgs/srv/MapSave "map_path: '/home/andy1/ws_ros2_test/maps/gazebo_house'"
     # which creates gazebo_house.mm/.simplemap at the paths below.
-    mm_map = '/home/andy1/ws_ros2_test/maps/mymap3.mm'
-    simple_map = '/home/andy1/ws_ros2_test/maps/mymap3.simplemap'
+    mm_map = '/home/andy/ws_ros2_test/maps/mymap3.mm'
+    simple_map = '/home/andy/ws_ros2_test/maps/mymap3.simplemap'
 
     # NOTE: same as mola_slam_launch.py - the official apt package doesn't ship a
     # separate "-localize-katana" launch file. The unified ros2-lidar-odometry.launch.py

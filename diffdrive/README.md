@@ -1,8 +1,55 @@
 # diffdrive workspace
 
 A differential-drive robot in Gazebo with a simulated Livox Mid-360 (`diff_description`),
-MOLA lidar SLAM/localization (`mola_bringup`, `MOLA-SLAM`), and Nav2 autonomous navigation
-on top of MOLA's localization.
+MOLA lidar SLAM/localization (`mola_bringup`), and Nav2 autonomous navigation on top of
+MOLA's localization.
+
+## Prerequisites
+
+Targets **ROS 2 Jazzy on Ubuntu 24.04**. Install ROS 2 Jazzy itself first (Desktop or Base -
+see https://docs.ros.org/en/jazzy/Installation.html), then install every package this
+workspace needs at build/run time:
+
+```bash
+sudo apt update
+sudo apt install -y \
+  python3-colcon-common-extensions python3-rosdep \
+  ros-jazzy-xacro ros-jazzy-urdf-tutorial \
+  ros-jazzy-ros-gz ros-jazzy-ros-gz-sim ros-jazzy-ros-gz-bridge ros-jazzy-gz-ros2-control \
+  ros-jazzy-controller-manager ros-jazzy-diff-drive-controller ros-jazzy-joint-state-broadcaster \
+  ros-jazzy-joint-state-publisher ros-jazzy-joint-state-publisher-gui \
+  ros-jazzy-robot-state-publisher ros-jazzy-rviz2 \
+  ros-jazzy-teleop-twist-keyboard \
+  ros-jazzy-mola-lidar-odometry ros-jazzy-mola-msgs ros-jazzy-mola-bridge-ros2 \
+  ros-jazzy-mola-metric-maps \
+  ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+  python3-tk python3-matplotlib python3-numpy
+```
+
+Then, from the workspace root (the folder containing `src/`):
+
+```bash
+sudo rosdep init   # only if you've never run rosdep on this machine before
+rosdep update
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install
+source install/setup.bash
+```
+
+`rosdep install` covers the `package.xml`-declared build deps (xacro, controller_manager,
+nav2 packages, etc.); the `apt install` above additionally covers MOLA, teleop_twist_keyboard
+and the Python GUI/plotting libs, which are invoked at runtime (via `ros2 launch`/`ros2 run`
+rather than linked at build time) so `rosdep` doesn't see them.
+
+Add `source /path/to/ws_ros2_test/install/setup.bash` to `~/.bashrc` so new terminals pick
+up the built packages automatically (alongside `ROS_DOMAIN_ID` below).
+
+**Note on `MOLA-SLAM/`:** that folder is a reference/build-from-source guide (targets ROS 2
+Humble) kept for documentation purposes only - it's marked `COLCON_IGNORE`d and is **not**
+built or used by anything below. The actual MOLA integration is the `ros-jazzy-mola-lidar-odometry`
+/ `ros-jazzy-mola-msgs` apt packages installed above; `mola_bringup`'s launch files invoke
+them via `ros2 launch mola_lidar_odometry ros2-lidar-odometry.launch.py`. You can ignore or
+delete `MOLA-SLAM/` entirely.
 
 ## One-time setup
 
@@ -50,14 +97,22 @@ ros2 launch mola_bringup mola_localize_launch.py
 ```
 
 Edit the `mm_map`/`simple_map` paths at the top of that launch file to point at the map
-you want to localize against (defaults to `myroom.mm`/`myroom.simplemap`).
+you want to localize against (currently defaults to `mymap3.mm`/`mymap3.simplemap`).
 
 MOLA starts paused (`active: false`). Activate it with:
 
 ```bash
 ros2 service call /mola_runtime_param_set mola_msgs/srv/MolaRuntimeParamSet \
-  "{parameters: 'mola::LidarOdometry:lidar_odom:\n  active: true\n'}"
+  '{parameters: "mola::LidarOdometry:lidar_odom:\n  active: true\n"}'
 ```
+
+(Note the quoting: the outer argument is single-quoted for bash and the `parameters`
+value is **double**-quoted for YAML - YAML only expands `\n` to a real newline inside
+double-quoted scalars. Swapping those (single-quoted YAML value under bash
+double-quotes) makes `\n` reach MOLA as a literal backslash-n instead of a newline, so
+the multi-line parameter block fails to parse and the service silently returns
+`success=False` - active stays false and localization looks like it "does nothing"
+without any visible crash.)
 
 (The `plot_lidar_trajectory.py` GUI launched alongside this does the same thing via its
 "Publish Initial Pose & Activate MOLA" button, plus lets you set a non-origin initial
@@ -82,11 +137,8 @@ controls), and a relocalize/restart is the practical workaround for now.
 
 ## 4. Autonomous navigation with Nav2
 
-Nav2 is **not** installed by default here - one-time setup:
-
-```bash
-sudo apt-get install -y ros-jazzy-navigation2 ros-jazzy-nav2-bringup
-```
+Nav2 (`ros-jazzy-navigation2`, `ros-jazzy-nav2-bringup`) is installed as part of
+[Prerequisites](#prerequisites) above.
 
 MOLA (not AMCL) provides `map -> odom` localization, so Nav2 here only handles costmaps,
 planning and control. Its costmap obstacle layers read the live 3D point cloud directly

@@ -18,7 +18,10 @@
   <depend>nav_msgs</depend>
   <depend>std_srvs</depend>
   <depend>tf2_ros</depend>
+  <depend>geometry_msgs</depend>
 
+  <exec_depend>mola_lidar_odometry</exec_depend>
+  <exec_depend>mola_msgs</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>nav2_planner</exec_depend>
   <exec_depend>nav2_controller</exec_depend>
