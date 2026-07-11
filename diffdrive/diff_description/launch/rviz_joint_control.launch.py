@@ -3,9 +3,10 @@ from os import path
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, RegisterEventHandler, SetEnvironmentVariable, TimerAction
+from launch.actions import (DeclareLaunchArgument, ExecuteProcess, RegisterEventHandler,
+                             SetEnvironmentVariable, TimerAction)
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from ros_gz_sim.actions import GzServer
 
@@ -17,11 +18,25 @@ def generate_launch_description():
     # rieng (lay theo octet cuoi cua IP LAN cho it trung) de tach DDS multicast khoi ho.
     os.environ['ROS_DOMAIN_ID'] = '161'
 
+    # world:=<filename under worlds/> lets test scenarios (e.g. terrain_test.world for
+    # ramp/uneven-terrain testing) run without touching the default house.world.
+    world_arg = DeclareLaunchArgument(
+        'world', default_value='house.world',
+        description='World SDF filename under diff_description/worlds/')
+
     # Lay duong dan trong package sau khi da build/install.
     pkg_share = get_package_share_directory('diff_description')
-    world_file = path.join(pkg_share, 'worlds', 'house.world')
+    world_file = PathJoinSubstitution([pkg_share, 'worlds', LaunchConfiguration('world')])
     xacro_file = path.join(pkg_share, 'urdf', 'robot.urdf.xacro')
-    controller_config = path.join(pkg_share, 'config', 'my_controllers.yaml')
+
+    # Overridable so other bringup packages can supply their own controllers yaml
+    # (e.g. a real-hardware variant that re-enables wheel odometry) without editing
+    # this file.
+    controller_config_arg = DeclareLaunchArgument(
+        'controller_config',
+        default_value=path.join(pkg_share, 'config', 'my_controllers.yaml'),
+        description='Path to the ros2_control controllers yaml (diff_cont, joint_broad)')
+    controller_config = LaunchConfiguration('controller_config')
     rviz_config = path.join(pkg_share, 'config', 'robot.rviz')
     model_path = path.join(pkg_share, 'models')
 
@@ -226,6 +241,8 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        world_arg,
+        controller_config_arg,
         set_gz_sim_resource_path,
         set_gazebo_model_path,
         gz_server,

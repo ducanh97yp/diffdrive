@@ -1,0 +1,307 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+    <world name='default'>
+        <plugin
+          filename="gz-sim-physics-system"
+          name="gz::sim::systems::Physics">
+          <engine>
+            <filename>libgz-physics-dartsim-plugin.so</filename>
+          </engine>
+        </plugin>
+        <plugin
+            filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands">
+        </plugin>
+        <plugin
+            filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster">
+        </plugin>
+
+        <plugin
+            filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+            <render_engine>ogre2</render_engine>
+        </plugin>
+
+        <plugin
+            filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu">
+        </plugin>
+
+        <gravity>0.0 0.0 -9.8</gravity>
+
+        <physics name="8ms" type="dartsim">
+            <max_step_size>0.008</max_step_size>
+            <real_time_factor>1.0</real_time_factor>
+        </physics>
+
+        <scene>
+            <ambient>0.4 0.4 0.4 1</ambient>
+            <background>0.7 0.7 0.7 1</background>
+            <shadows>false</shadows>
+            <grid>false</grid>
+            <origin_visual>false</origin_visual>
+        </scene>
+
+        <gui>
+            <camera name="user_camera">
+                <pose>4 -6 4 0 0.46 1.7</pose>
+            </camera>
+        </gui>
+
+        <!-- Standalone, isolated terrain test world: deliberately NOT reusing
+             house.world's imported furniture models, so the ramp/bump collision
+             geometry below is fully known and controlled for testing. -->
+        <model name="ground_plane">
+            <static>true</static>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>100 100</size>
+                        </plane>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>100 100</size>
+                        </plane>
+                    </geometry>
+                    <material>
+                        <ambient>0.92 0.85 0.7 1</ambient>
+                        <diffuse>0.92 0.85 0.7 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Spawn-area geometry (2026-07-11, LIO-SAM migration) - added for the
+             exact same reason end_wall exists (see its comment below): open,
+             feature-empty ground plane near the robot is a genuine lidar-SLAM
+             degeneracy. FAST-LIO's direct point-to-plane/edge nearest-neighbor
+             matching against a continuously-growing ikd-tree tolerated a sparse
+             spawn area; LIO-SAM's LOAM-style discrete edge/surface feature
+             extraction did not - confirmed empirically as the root cause of a
+             severe pose divergence (~30m) that developed within seconds of startup,
+             well before the robot ever reached the ramp or bump cluster (feature
+             counts were normal - 89 corner/1352 surface - so this isn't a feature
+             STARVATION problem; it's a geometric degeneracy).
+             First attempt was two long walls flanking the run-up, parallel to the
+             direction of travel (+x) - this fixed y/yaw drift completely but left x
+             itself totally unconstrained (confirmed empirically: y stayed ~0, x
+             drifted freely while the robot sat still) - a classic "sliding along a
+             corridor" aperture problem, since translating along a wall's own plane
+             doesn't change how well it matches. Fixed by adding small boxes with
+             faces that have a normal component in x (something for the lidar to
+             range against ahead of/behind the robot, not just to the sides). -->
+        <model name="spawn_wall_left">
+            <static>true</static>
+            <pose>1 1.25 0.4 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>4.0 0.1 0.8</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>4.0 0.1 0.8</size></box></geometry>
+                    <material><ambient>0.5 0.5 0.55 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="spawn_wall_right">
+            <static>true</static>
+            <pose>1 -1.25 0.4 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>4.0 0.1 0.8</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>4.0 0.1 0.8</size></box></geometry>
+                    <material><ambient>0.55 0.5 0.5 1</ambient><diffuse>0.55 0.5 0.5 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="spawn_box_1">
+            <static>true</static>
+            <pose>-0.6 0.6 0.3 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.3 0.3 0.6</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.3 0.3 0.6</size></box></geometry>
+                    <material><ambient>0.7 0.6 0.3 1</ambient><diffuse>0.7 0.6 0.3 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="spawn_box_2">
+            <static>true</static>
+            <pose>-0.6 -0.7 0.3 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.3 0.3 0.6</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.3 0.3 0.6</size></box></geometry>
+                    <material><ambient>0.3 0.6 0.7 1</ambient><diffuse>0.3 0.6 0.7 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="spawn_box_3">
+            <static>true</static>
+            <pose>2.4 0.5 0.3 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.3 0.3 0.6</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.3 0.3 0.6</size></box></geometry>
+                    <material><ambient>0.6 0.3 0.7 1</ambient><diffuse>0.6 0.3 0.7 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- The three small spawn_box_* corner-anchors above were not enough on
+             their own - x still drifted (slower, but not stopped) with only those in
+             place. This bigger box directly behind the spawn point (robot starts at
+             x=1, facing +x) gives a strong, close, X-facing return from frame one
+             without blocking the forward drive path to the ramp at all. -->
+        <model name="spawn_anchor_wall">
+            <static>true</static>
+            <pose>0.0 0 0.5 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.6 2.4 1.0</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.6 2.4 1.0</size></box></geometry>
+                    <material><ambient>0.45 0.45 0.5 1</ambient><diffuse>0.45 0.45 0.5 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Slight incline ramp: 8 degrees, 3m long, ~0.42m height gain. Starts at
+             x=3 (2m flat run-up from spawn at x=1), ends at x~5.97. -->
+        <model name="ramp">
+            <static>true</static>
+            <pose>4.4854 0 0.213711 0 -0.13963 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>3.0 2.5 0.01</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>3.0 2.5 0.01</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Flat platform at the top of the ramp (z~0.4175), 4m long, for testing
+             stable driving at height and as the base for the uneven-terrain bumps. -->
+        <model name="ramp_platform">
+            <static>true</static>
+            <pose>7.97 0 0.3675 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>4.0 2.5 0.1</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>4.0 2.5 0.1</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Uneven terrain: scattered ~3cm bumps on the platform (x=6.5..9.4). -->
+        <model name="bump_1">
+            <static>true</static>
+            <pose>6.5 0.3 0.4325 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.15 0.15 0.03</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.15 0.15 0.03</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="bump_2">
+            <static>true</static>
+            <pose>7.0 -0.25 0.4325 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.15 0.15 0.03</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.15 0.15 0.03</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="bump_3">
+            <static>true</static>
+            <pose>7.5 0.15 0.4325 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.15 0.15 0.03</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.15 0.15 0.03</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="bump_4">
+            <static>true</static>
+            <pose>8.0 -0.2 0.4325 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.15 0.15 0.03</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.15 0.15 0.03</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="bump_5">
+            <static>true</static>
+            <pose>8.5 0.25 0.4325 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.15 0.15 0.03</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.15 0.15 0.03</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="bump_6">
+            <static>true</static>
+            <pose>9.0 -0.15 0.4325 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.15 0.15 0.03</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.15 0.15 0.03</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- End-stop wall at the far end of the platform: without this, a robot
+             driving past the platform sees only open, feature-empty ground plane
+             ahead - a genuine lidar-SLAM degeneracy (nothing nearby to match
+             against) unrelated to the ramp/bump test itself. This just gives the
+             lidar-SLAM something to see so the ramp+uneven-terrain test isn't
+             contaminated by that separate, expected limitation. -->
+        <model name="end_wall">
+            <static>true</static>
+            <pose>11 0 0.6675 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.1 2.5 0.5</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.1 2.5 0.5</size></box></geometry>
+                    <material><ambient>0.5 0.5 0.55 1</ambient><diffuse>0.5 0.5 0.55 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+
+        <light name='sun' type='directional'>
+            <cast_shadows>1</cast_shadows>
+            <pose>0 0 10 0 -0 0</pose>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+            <attenuation>
+                <range>1000</range>
+                <constant>0.9</constant>
+                <linear>0.01</linear>
+                <quadratic>0.001</quadratic>
+            </attenuation>
+            <direction>-0.5 0.1 -0.9</direction>
+        </light>
+
+    </world>
+</sdf>

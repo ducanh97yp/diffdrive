@@ -1,0 +1,88 @@
+/**:
+  ros__parameters:
+
+    # Topics - Phase 3: our new Ouster OS1 sim adapter (gz_lidar_to_ouster.cpp),
+    # publishing LIO-SAM's OusterPointXYZIRT layout
+    pointCloudTopic: "/ouster_points"
+    imuTopic: "/imu"
+    odomTopic: "odometry/imu"
+    gpsTopic: "odometry/gpsz"
+
+    # Frames - match diff_description's actual URDF frame names
+    lidarFrame: "laser_frame"
+    baselinkFrame: "base_link"
+    odometryFrame: "odom"
+    mapFrame: "map"
+
+    useImuHeadingInitialization: false
+    useGpsElevation: false
+    gpsCovThreshold: 2.0
+    poseCovThreshold: 25.0
+
+    savePCD: false
+    savePCDDirectory: "/Downloads/LOAM/"
+
+    # Sensor Settings - matches the OS1 gpu_lidar config in lidar.xacro exactly
+    # (N_SCAN=32, Horizon_SCAN=512, see that file's mount comment for why)
+    sensor: ouster
+    N_SCAN: 32
+    Horizon_SCAN: 512
+    downsampleRate: 1
+    lidarMinRange: 0.1
+    lidarMaxRange: 40.0
+
+    # IMU Settings - same placeholder noise values as Phase 2 (industrial IMU is
+    # unchanged by the lidar swap - orthogonal upgrade, see lidar.xacro)
+    imuAccNoise: 3.9939570888238808e-03
+    imuGyrNoise: 1.5636343949698187e-03
+    imuAccBiasN: 6.4356659353532566e-05
+    imuGyrBiasN: 3.5640318696367613e-05
+
+    imuGravity: 9.8
+    imuRPYWeight: 0.01
+
+    # extrinsicRot/RPY identity: laser_joint and imu_joint are both rpy=0 0 0
+    # relative to chassis with the OS1 mount (see lidar.xacro), same reasoning as
+    # Phase 2's config after its fix - no rotation between the two frames.
+    # extrinsicTrans is imu_link's origin (0.05,0,0.03) minus laser_frame's OS1
+    # origin (0.1697,0,0.15) in chassis coords, expressed directly since there is no
+    # rotation between the two frames to account for.
+    extrinsicTrans: [ -0.1197, 0.0, -0.12 ]
+    extrinsicRot:   [ 1.0, 0.0, 0.0,
+                       0.0, 1.0, 0.0,
+                       0.0, 0.0, 1.0 ]
+    extrinsicRPY:   [ 1.0, 0.0, 0.0,
+                       0.0, 1.0, 0.0,
+                       0.0, 0.0, 1.0 ]
+
+    edgeThreshold: 1.0
+    surfThreshold: 0.1
+    edgeFeatureMinValidNum: 10
+    surfFeatureMinValidNum: 100
+
+    odometrySurfLeafSize: 0.2
+    mappingCornerLeafSize: 0.1
+    mappingSurfLeafSize: 0.2
+
+    z_tollerance: 1000.0
+    rotation_tollerance: 1000.0
+
+    numberOfCores: 4
+    mappingProcessInterval: 0.15
+
+    surroundingkeyframeAddingDistThreshold: 1.0
+    surroundingkeyframeAddingAngleThreshold: 0.2
+    surroundingKeyframeDensity: 2.0
+    surroundingKeyframeSearchRadius: 50.0
+
+    loopClosureEnableFlag: false
+    loopClosureFrequency: 1.0
+    surroundingKeyframeSize: 50
+    historyKeyframeSearchRadius: 15.0
+    historyKeyframeSearchTimeDiff: 30.0
+    historyKeyframeSearchNum: 25
+    historyKeyframeFitnessScore: 0.3
+
+    globalMapVisualizationSearchRadius: 1000.0
+    globalMapVisualizationPoseDensity: 10.0
+    globalMapVisualizationLeafSize: 1.0

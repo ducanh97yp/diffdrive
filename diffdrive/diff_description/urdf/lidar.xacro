@@ -1,26 +1,52 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" >
 
+    <!-- Switched Livox Mid-360 -> Ouster OS1 (2026-07-11, LIO-SAM migration) - the
+         customer directed a full SLAM stack replacement (FAST-LIO -> LIO-SAM) and
+         lidar swap (Mid-360 -> OS1) together. OS1's vertical FOV is symmetric
+         (+-22.5deg, 45deg total) unlike Mid-360's asymmetric -7~52deg, so - unlike
+         every earlier lidar swap in this repo's history - no downward-biased-FOV
+         trick (physical flip or negated native angle range) is needed at all - a
+         level, upright mount already points half the beams up and half down.
+         real OS1 dimensions - 85mm dia cylinder, 73.5mm tall, ~484g.
+         N_SCAN=32 (a real OS1-32 variant) x Horizon_SCAN=512 (a real Ouster column
+         count, not an arbitrary simulation-only number - keeps this config
+         meaningful when transitioning to real ouster-ros hardware later).
+         update_rate kept at 5Hz (half the real 10Hz default) for the same GPU-less
+         raycasting load reason established for Mid-360 (32*512=16384 rays/scan,
+         under 2x the old 24*360=8640 - should be fine on the same hardware that
+         handled Mid-360's load; raise toward 10Hz if run on a GPU-equipped machine).
+
+         Mount height 0.15 (chassis top clearance 0.107m) - re-derived empirically
+         for OS1 the same way as Mid-360's - OS1's shallowest downward angle is only
+         -22.5deg vs Mid-360's -52deg, so a much lower mount already clears most of
+         the chassis, but a self-hit cluster still exists at this height (range
+         0.24-0.50m, well short of the shortest real returns starting ~0.6m) -
+         confirmed via direct point-cloud inspection and handled with a self-filter
+         box in gz_lidar_to_ouster.cpp (see that file's comment for the numbers),
+         same approach as the Mid-360 adapter. Raising the mount further would
+         shrink the self-hit zone but was not necessary since the filter box already
+         cleanly separates it from legitimate returns with margin to spare. -->
     <joint name="laser_joint" type="fixed">
         <parent link="chassis"/>
         <child link="laser_frame"/>
-        <origin xyz="0.1697 0 0.07363" rpy="3.14 0 0"/>
+        <origin xyz="0.1697 0 0.15" rpy="0 0 0"/>
     </joint>
 
-    <!-- Kich thuoc xap xi Livox Mid-360 that - hinh tru phi65mm x cao 60.5mm, nang 265g. -->
+    <!-- Kich thuoc Ouster OS1 that - hinh tru phi85mm x cao 73.5mm, nang 484g. -->
     <link name="laser_frame">
         <visual>
             <geometry>
-                <cylinder radius="0.0325" length="0.0605"/>
+                <cylinder radius="0.0425" length="0.0735"/>
             </geometry>
             <material name="black"/>
         </visual>
         <collision>
             <geometry>
-                <cylinder radius="0.0325" length="0.0605"/>
+                <cylinder radius="0.0425" length="0.0735"/>
             </geometry>
         </collision>
-        <xacro:inertial_cylinder mass="0.265" length="0.0605" radius="0.0325">
+        <xacro:inertial_cylinder mass="0.484" length="0.0735" radius="0.0425">
             <origin xyz="0 0 0" rpy="0 0 0"/>
         </xacro:inertial_cylinder>
     </link>
@@ -30,15 +56,13 @@
     <gazebo reference="laser_frame">
         <material>Gazebo/Black</material>
 
-        <!-- Cau hinh xap xi Livox Mid-360 - FOV 360(H) x 59(V, -7~52 do), range 0.1-40m.
-             Mid-360 that quet non-repetitive (hoa van canh hoa) chu khong quet theo tung
-             line co dinh nhu gpu_lidar cua Gazebo, nen day chi la xap xi ve FOV, khong
-             phai mo phong dung kieu quet.
-             update_rate giam tu 10Hz (datasheet thuc) xuong 5Hz, va so dong quet doc giam
-             tu 56 xuong 24 (van giu FOV -7~52 do, chi giam mat do), de giam tai GPU
-             raycasting tren may khong co GPU roi - RTF thuc te truoc do <1 gay giat/lag va
-             RViz nhap nhay OK/Error o status Transform cua PointCloud2. Neu chay tren may
-             manh hon co the tang lai update_rate ve 10 va samples ve 56. -->
+        <!-- Ouster OS1 approximate config - FOV 360(H) x 45(V, +-22.5 deg symmetric),
+             range 0.1-40m (real OS1 min range is closer to 0.3-0.5m depending on
+             reflectivity; kept at 0.1 to match the rest of this repo's range
+             convention). Gazebo's gpu_lidar is a fixed angular ray-cast grid, unlike
+             OS1's real rotating-mirror-per-channel mechanism, so this is still only
+             an approximation of the FOV shape, not the real scan mechanics - same
+             caveat as every other simulated lidar in this repo. -->
         <sensor name="laser" type="gpu_lidar">
             <pose> 0 0 0 0 0 0 </pose>
             <topic>scan</topic>
@@ -49,16 +73,16 @@
             <lidar>
                 <scan>
                     <horizontal>
-                        <samples>360</samples>
+                        <samples>512</samples>
                         <resolution>1</resolution>
                         <min_angle>-3.141592653589793</min_angle>
                         <max_angle>3.141592653589793</max_angle>
                     </horizontal>
                     <vertical>
-                        <samples>24</samples>
+                        <samples>32</samples>
                         <resolution>1</resolution>
-                        <min_angle>-0.12217304764</min_angle>
-                        <max_angle>0.90757121103</max_angle>
+                        <min_angle>-0.39269908169872414</min_angle>
+                        <max_angle>0.39269908169872414</max_angle>
                     </vertical>
                 </scan>
                 <range>
@@ -68,27 +92,60 @@
                 </range>
             </lidar>
         </sensor>
+    </gazebo>
 
-        <!-- Mid-360 co IMU 6 truc (accel + gyro) tich hop san trong cung khoi, dat trung
-             goc voi lidar nen dung lai laser_frame, khong can link rieng. Update_rate
-             200Hz theo datasheet Mid-360. Noise la gia lap MEMS IMU thong dung, khong
-             lay tu thong so chinh xac cua Livox. -->
+    <!-- Separate industrial-grade IMU (e.g. Xsens MTi-3 / VectorNav VN-100 class),
+         no longer bundled inside the lidar housing like the Mid-360's integrated
+         IMU - mounted directly on the chassis instead. Noise floors below are
+         representative of factory-calibrated industrial MEMS (roughly 10-50x lower
+         than the previous consumer-grade approximation) - angular_velocity stddev
+         0.0003 -> 0.00003 rad/s, linear_acceleration stddev 0.017 -> 0.0015 m/s^2.
+         fast_lio's tightly-coupled IMU+lidar filter uses this directly for its
+         gravity/orientation estimate (see FAST_LIO_ROS2/src/IMU_Processing.hpp),
+         which is what gives it correct ramp pitch tracking (<1 deg error measured)
+         without the flat-ground pitch bias pure lidar-ICP approaches (MOLA) had. -->
+    <joint name="imu_joint" type="fixed">
+        <parent link="chassis"/>
+        <child link="imu_link"/>
+        <origin xyz="0.05 0 0.03" rpy="0 0 0"/>
+    </joint>
+
+    <link name="imu_link">
+        <visual>
+            <geometry>
+                <box size="0.024 0.024 0.01"/>
+            </geometry>
+            <material name="red"/>
+        </visual>
+        <collision>
+            <geometry>
+                <box size="0.024 0.024 0.01"/>
+            </geometry>
+        </collision>
+        <xacro:inertial_box mass="0.02" x="0.024" y="0.024" z="0.01">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </xacro:inertial_box>
+    </link>
+
+    <gazebo reference="imu_link">
+        <material>Gazebo/Red</material>
+
         <sensor name="imu_sensor" type="imu">
             <pose>0 0 0 0 0 0</pose>
             <topic>imu</topic>
-            <gz_frame_id>laser_frame</gz_frame_id>
+            <gz_frame_id>imu_link</gz_frame_id>
             <always_on>true</always_on>
             <update_rate>200</update_rate>
             <imu>
                 <angular_velocity>
-                    <x><noise type="gaussian"><mean>0</mean><stddev>0.0003</stddev></noise></x>
-                    <y><noise type="gaussian"><mean>0</mean><stddev>0.0003</stddev></noise></y>
-                    <z><noise type="gaussian"><mean>0</mean><stddev>0.0003</stddev></noise></z>
+                    <x><noise type="gaussian"><mean>0</mean><stddev>0.00003</stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0</mean><stddev>0.00003</stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0</mean><stddev>0.00003</stddev></noise></z>
                 </angular_velocity>
                 <linear_acceleration>
-                    <x><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></x>
-                    <y><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></y>
-                    <z><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></z>
+                    <x><noise type="gaussian"><mean>0</mean><stddev>0.0015</stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0</mean><stddev>0.0015</stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0</mean><stddev>0.0015</stddev></noise></z>
                 </linear_acceleration>
             </imu>
         </sensor>

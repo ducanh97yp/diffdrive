@@ -90,6 +90,39 @@
         </visual>
     </link>
 </model>
+
+<!-- Slippery patch for wheel-slip testing: near-zero linear friction (mu1/mu2),
+     spans the corridor the robot drives through on its way to the far wall so any
+     forward drive command reliably crosses it. -->
+<model name="slippery_patch">
+    <static>true</static>
+    <pose>4 0 0.001 0 0 0</pose>
+    <link name="link">
+        <collision name="collision">
+            <geometry>
+                <box><size>2.0 3.0 0.002</size></box>
+            </geometry>
+            <surface>
+                <friction>
+                    <ode>
+                        <mu>0.001</mu>
+                        <mu2>0.001</mu2>
+                    </ode>
+                </friction>
+            </surface>
+        </collision>
+        <visual name="visual">
+            <geometry>
+                <box><size>2.0 3.0 0.002</size></box>
+            </geometry>
+            <material>
+                <ambient>0.6 0.8 0.95 0.6</ambient>
+                <diffuse>0.6 0.8 0.95 0.6</diffuse>
+            </material>
+        </visual>
+    </link>
+</model>
+
         <model name='HouseWallB_01_001'>
             <static>true</static>
             <include>

@@ -6,7 +6,7 @@ import os
 
 def generate_launch_description():
     # Same LAN cross-talk concern as the other launch files in this workspace - keep
-    # domain consistent so this node sees the same graph as Gazebo/MOLA.
+    # domain consistent so this node sees the same graph as Gazebo/fast_lio.
     os.environ['ROS_DOMAIN_ID'] = '161'
 
     teleop_gui_node = Node(
