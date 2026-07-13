@@ -10,6 +10,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <nav_msgs/msg/occupancy_grid.hpp>
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
@@ -22,8 +23,13 @@
 #include <pcl/io/pcd_io.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/registration/icp.h>
+#include <pcl/features/normal_3d.h>
+#include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+#include <Eigen/Eigenvalues>
+#include <cmath>
+#include <limits>
 #include <mutex>
 
 class PcdMapLocalizer : public rclcpp::Node
@@ -42,6 +48,17 @@ public:
     max_correspondence_distance_ = declare_parameter<double>("max_correspondence_distance", 1.0);
     fitness_score_threshold_ = declare_parameter<double>("fitness_score_threshold", 0.5);
     max_iterations_ = declare_parameter<int>("max_iterations", 50);
+    // 0.45 is tuned from real data (see pcd_map_localizer.cpp git history/README): a
+    // genuinely weak axis (parallel-wall corridor) measured ~0.30, a normally-constrained
+    // one ~0.67-0.79 - comfortable margin on both sides.
+    degenerate_eigenvalue_ratio_ = declare_parameter<double>("degenerate_eigenvalue_ratio", 0.45);
+    min_degeneracy_correspondences_ = declare_parameter<int>("min_degeneracy_correspondences", 20);
+    max_correction_per_update_ = declare_parameter<double>("max_correction_per_update", 0.3);
+    map2d_resolution_ = declare_parameter<double>("map2d_resolution", 0.05);
+    map2d_z_min_ = declare_parameter<double>("map2d_z_min", 0.05);
+    map2d_z_max_ = declare_parameter<double>("map2d_z_max", 1.5);
+    map2d_padding_ = declare_parameter<double>("map2d_padding", 1.0);
+    tf_tolerance_ = declare_parameter<double>("tf_tolerance", 0.2);
     double init_x = declare_parameter<double>("initial_x", 0.0);
     double init_y = declare_parameter<double>("initial_y", 0.0);
     double init_z = declare_parameter<double>("initial_z", 0.0);
@@ -71,6 +88,37 @@ public:
     RCLCPP_INFO(get_logger(), "Loaded map cloud %s (%zu points, %zu after ICP downsample)", map_pcd_path_.c_str(),
                 raw_map->size(), map_cloud_->size());
 
+    // Surface normals + a KD-tree over map_cloud_, used after every ICP alignment to
+    // check *which directions* the correction was actually constrained along (see
+    // checkDegeneracy() below) - a corridor of parallel walls can give ICP a
+    // confident-looking low fitness score for a translation that's completely
+    // unconstrained along the corridor axis, since sliding along it barely changes
+    // point-to-point distances to either wall. Point-to-point ICP alone can't tell
+    // the difference; this can.
+    map_kdtree_.setInputCloud(map_cloud_);
+    map_normals_.reset(new pcl::PointCloud<pcl::Normal>());
+    {
+      pcl::NormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
+      ne.setInputCloud(map_cloud_);
+      pcl::search::KdTree<pcl::PointXYZ>::Ptr normal_tree(new pcl::search::KdTree<pcl::PointXYZ>());
+      ne.setSearchMethod(normal_tree);
+      ne.setKSearch(15);
+      ne.compute(*map_normals_);
+    }
+
+    // Nav2's global costmap in this repo has no static_layer (nav2_params.yaml is shared
+    // with pure-SLAM runs, which have no prior map to load), and nothing anywhere
+    // publishes /map - so Nav2's own RViz view (a separate rviz2 instance/config from
+    // LIO-SAM's, launched by nav2_bringup_launch.py) always showed an empty Map display,
+    // even while localizing on a saved map. Build a 2D occupancy grid from the same
+    // raw_map (full resolution, before display downsampling below) by slicing a height
+    // band and marking any cell containing a point in that band as occupied - the same
+    // approach common pcd2pgm-style converters use. Pair with
+    // nav2_params_localization.yaml's static_layer to actually feed Nav2's costmap.
+    nav_msgs::msg::OccupancyGrid occupancy_grid = buildOccupancyGrid(*raw_map);
+    RCLCPP_INFO(get_logger(), "Built 2D occupancy grid %ux%u @ %.2fm/cell from z in [%.2f, %.2f]",
+                occupancy_grid.info.width, occupancy_grid.info.height, map2d_resolution_, map2d_z_min_, map2d_z_max_);
+
     voxelDownsample(raw_map, voxel_leaf_display_);
 
     // Nothing else in localization mode ever publishes the prior map - mapOptimization
@@ -79,11 +127,35 @@ public:
     // Transient-local so RViz gets it even if it subscribes after this one-shot publish.
     prior_map_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>(
         "prior_map", rclcpp::QoS(1).transient_local().reliable());
-    sensor_msgs::msg::PointCloud2 map_msg;
-    pcl::toROSMsg(*raw_map, map_msg);
-    map_msg.header.frame_id = map_frame_;
-    map_msg.header.stamp = get_clock()->now();
-    prior_map_pub_->publish(map_msg);
+    // map_subscribe_transient_local in nav2_params_localization.yaml's static_layer expects
+    // exactly this QoS pattern - it's how nav2_map_server itself publishes /map.
+    map2d_pub_ = create_publisher<nav_msgs::msg::OccupancyGrid>("map", rclcpp::QoS(1).transient_local().reliable());
+    // Deferred instead of publishing right here: with use_sim_time, get_clock()->now()
+    // reads 0 until the node's /clock subscription has actually received and processed a
+    // message, which can't have happened yet this early in the constructor (confirmed
+    // empirically - stamped sec=0 when published directly here) and, empirically, is not
+    // reliably done within a fixed short delay either (DDS discovery for that subscription
+    // isn't instant). RViz's PointCloud2/Map displays treat a stamp of 0 as a real,
+    // very-old time rather than "latest", which can show as a transform/sync error in the
+    // Displays panel. Poll on a wall timer (unaffected by sim time itself) until the clock
+    // actually reports a nonzero time, then publish once and stop - correct regardless of
+    // how long that takes, instead of gambling on a fixed delay.
+    auto raw_map_for_publish = raw_map;
+    publish_prior_map_timer_ = create_wall_timer(std::chrono::milliseconds(50), [this, raw_map_for_publish, occupancy_grid]() {
+      if (get_clock()->now().nanoseconds() == 0) return;
+      sensor_msgs::msg::PointCloud2 map_msg;
+      pcl::toROSMsg(*raw_map_for_publish, map_msg);
+      map_msg.header.frame_id = map_frame_;
+      map_msg.header.stamp = get_clock()->now();
+      prior_map_pub_->publish(map_msg);
+
+      nav_msgs::msg::OccupancyGrid grid_msg = occupancy_grid;
+      grid_msg.header.stamp = get_clock()->now();
+      grid_msg.info.map_load_time = get_clock()->now();
+      map2d_pub_->publish(grid_msg);
+
+      publish_prior_map_timer_->cancel();
+    });
 
     {
       Eigen::Affine3d init = Eigen::Translation3d(init_x, init_y, init_z) *
@@ -119,6 +191,55 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr out(new pcl::PointCloud<pcl::PointXYZ>());
     vg.filter(*out);
     cloud = out;
+  }
+
+  // Simple pcd2pgm-style projection: mark any cell containing a point within
+  // [map2d_z_min_, map2d_z_max_] as occupied, everything else in the padded XY bounding
+  // box as free. No ray tracing/occlusion reasoning - matches what similar community
+  // conversion tools do, good enough for a static costmap layer, not survey-grade.
+  nav_msgs::msg::OccupancyGrid buildOccupancyGrid(const pcl::PointCloud<pcl::PointXYZ>& cloud) const
+  {
+    float min_x = std::numeric_limits<float>::max();
+    float max_x = std::numeric_limits<float>::lowest();
+    float min_y = std::numeric_limits<float>::max();
+    float max_y = std::numeric_limits<float>::lowest();
+    for (const auto& p : cloud.points)
+    {
+      if (!std::isfinite(p.x) || !std::isfinite(p.y)) continue;
+      min_x = std::min(min_x, p.x);
+      max_x = std::max(max_x, p.x);
+      min_y = std::min(min_y, p.y);
+      max_y = std::max(max_y, p.y);
+    }
+    min_x -= static_cast<float>(map2d_padding_);
+    min_y -= static_cast<float>(map2d_padding_);
+    max_x += static_cast<float>(map2d_padding_);
+    max_y += static_cast<float>(map2d_padding_);
+
+    nav_msgs::msg::OccupancyGrid grid;
+    grid.header.frame_id = map_frame_;
+    grid.info.resolution = static_cast<float>(map2d_resolution_);
+    grid.info.width = static_cast<uint32_t>(std::ceil((max_x - min_x) / map2d_resolution_));
+    grid.info.height = static_cast<uint32_t>(std::ceil((max_y - min_y) / map2d_resolution_));
+    grid.info.origin.position.x = min_x;
+    grid.info.origin.position.y = min_y;
+    grid.info.origin.position.z = 0.0;
+    grid.info.origin.orientation.w = 1.0;
+    grid.data.assign(static_cast<size_t>(grid.info.width) * grid.info.height, 0);
+
+    for (const auto& p : cloud.points)
+    {
+      if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
+      if (p.z < map2d_z_min_ || p.z > map2d_z_max_) continue;
+      int cx = static_cast<int>((p.x - min_x) / map2d_resolution_);
+      int cy = static_cast<int>((p.y - min_y) / map2d_resolution_);
+      if (cx < 0 || cy < 0 || cx >= static_cast<int>(grid.info.width) || cy >= static_cast<int>(grid.info.height))
+      {
+        continue;
+      }
+      grid.data[static_cast<size_t>(cy) * grid.info.width + static_cast<size_t>(cx)] = 100;
+    }
+    return grid;
   }
 
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
@@ -204,9 +325,110 @@ private:
       return;
     }
 
+    Eigen::Matrix4f icp_result = icp.getFinalTransformation();
+    Eigen::Matrix4f accepted;
+    if (!applyDegeneracyAwareCorrection(aligned, guess, icp_result, accepted))
+    {
+      RCLCPP_WARN(get_logger(),
+                  "pcd_map_localizer: too few normal-bearing correspondences (<%d) to check degeneracy, "
+                  "rejecting update",
+                  min_degeneracy_correspondences_);
+      return;
+    }
+
     std::lock_guard<std::mutex> lock(estimate_mutex_);
-    map_T_odom_ = icp.getFinalTransformation();
+    map_T_odom_ = accepted;
     RCLCPP_INFO(get_logger(), "pcd_map_localizer: map->odom updated, fitness=%.3f", fitness);
+  }
+
+  // Point-to-point ICP's fitness score measures how well the final alignment fits -
+  // not whether each direction was actually constrained enough to trust. A corridor
+  // of parallel walls is the textbook failure case: sliding along the corridor axis
+  // barely changes point-to-point distances, so ICP can converge "confidently" to a
+  // translation that's wrong along that one axis. This mirrors LOAM/LEGO-LOAM's own
+  // degeneracy handling: build an approximate translation information matrix from
+  // the surface normals at each correspondence (a normal with a strong X component
+  // means that correspondence constrains X well; a wall's-worth of Y/Z-only normals
+  // contributes nothing to constraining X), eigen-decompose it, and only accept the
+  // ICP correction along eigenvectors whose eigenvalue isn't tiny relative to the
+  // largest - the rest keeps the previous (pre-ICP) estimate's component instead of
+  // trusting a direction the scan couldn't actually see.
+  bool applyDegeneracyAwareCorrection(const pcl::PointCloud<pcl::PointXYZ>& aligned, const Eigen::Matrix4f& guess,
+                                       const Eigen::Matrix4f& icp_result, Eigen::Matrix4f& accepted)
+  {
+    Eigen::Matrix3f H = Eigen::Matrix3f::Zero();
+    int count = 0;
+    std::vector<int> nn_idx(1);
+    std::vector<float> nn_sq_dist(1);
+    const float max_dist_sq = static_cast<float>(max_correspondence_distance_ * max_correspondence_distance_);
+    for (const auto& p : aligned.points)
+    {
+      if (map_kdtree_.nearestKSearch(p, 1, nn_idx, nn_sq_dist) == 0) continue;
+      if (nn_sq_dist[0] > max_dist_sq) continue;
+      const pcl::Normal& normal = map_normals_->points[nn_idx[0]];
+      if (!std::isfinite(normal.normal_x) || !std::isfinite(normal.normal_y) || !std::isfinite(normal.normal_z))
+      {
+        continue;
+      }
+      Eigen::Vector3f n(normal.normal_x, normal.normal_y, normal.normal_z);
+      H += n * n.transpose();
+      ++count;
+    }
+
+    if (count < min_degeneracy_correspondences_) return false;
+
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> solver(H);
+    Eigen::Vector3f eigenvalues = solver.eigenvalues();     // ascending
+    Eigen::Matrix3f eigenvectors = solver.eigenvectors();
+    float max_eig = eigenvalues(2);
+
+    Eigen::Vector3f t0 = guess.block<3, 1>(0, 3);
+    Eigen::Vector3f t1 = icp_result.block<3, 1>(0, 3);
+    Eigen::Vector3f delta = t1 - t0;
+
+    Eigen::Vector3f accepted_delta = Eigen::Vector3f::Zero();
+    int degenerate_axes = 0;
+    for (int i = 0; i < 3; ++i)
+    {
+      bool degenerate = max_eig < 1e-6f || eigenvalues(i) < static_cast<float>(degenerate_eigenvalue_ratio_) * max_eig;
+      if (degenerate)
+      {
+        ++degenerate_axes;
+        continue;
+      }
+      Eigen::Vector3f v = eigenvectors.col(i);
+      accepted_delta += v * v.dot(delta);
+    }
+
+    if (degenerate_axes > 0)
+    {
+      RCLCPP_WARN(get_logger(),
+                  "pcd_map_localizer: %d/3 translation axis(es) degenerate (eigenvalue ratio < %.2f) - "
+                  "rejecting ICP correction along them, keeping previous estimate there",
+                  degenerate_axes, degenerate_eigenvalue_ratio_);
+    }
+
+    // Belt-and-suspenders on top of the eigenvalue check: measured on a real parallel-wall
+    // corridor (terrain_test.world spawn area), the weak axis wasn't a clean numerical
+    // singularity (eigenvalue ratio ~0.3, not ~0) - just weakly constrained enough that a
+    // single noisy ICP solve still occasionally jumped >1m along it in one 0.2s update, which
+    // a purely ratio-based threshold can't reliably distinguish from a large jump that's
+    // actually deserved (e.g. right after startup or an /initialpose reseed, both of which
+    // *should* be allowed to move a lot). Clamp the magnitude of what a single ICP update may
+    // change map->odom by; anything the true state needs beyond that just takes a few more
+    // 0.2s cycles instead of one leap of faith.
+    float delta_norm = accepted_delta.norm();
+    if (delta_norm > static_cast<float>(max_correction_per_update_))
+    {
+      RCLCPP_WARN(get_logger(), "pcd_map_localizer: capping ICP correction %.3fm -> %.3fm (max_correction_per_update)",
+                  delta_norm, max_correction_per_update_);
+      accepted_delta *= static_cast<float>(max_correction_per_update_) / delta_norm;
+    }
+
+    accepted = Eigen::Matrix4f::Identity();
+    accepted.block<3, 3>(0, 0) = icp_result.block<3, 3>(0, 0);
+    accepted.block<3, 1>(0, 3) = t0 + accepted_delta;
+    return true;
   }
 
   void broadcastTransform()
@@ -219,7 +441,15 @@ private:
     Eigen::Isometry3d iso(m.cast<double>());
 
     geometry_msgs::msg::TransformStamped tf_msg = tf2::eigenToTransform(iso);
-    tf_msg.header.stamp = get_clock()->now();
+    // Stamped tf_tolerance_ into the future, same trick AMCL uses for its own
+    // map->odom broadcast: a lookup at "now" (or slightly after, by the time a
+    // request round-trips through another node) landing between two of our 20ms
+    // broadcasts would otherwise throw "Lookup would require extrapolation into the
+    // future" - confirmed to actually break Nav2 with this, not just a theoretical
+    // risk: controller_server hit exactly this exception on map->odom, aborted
+    // follow_path, and the robot never moved despite /cmd_vel still publishing
+    // (all zeros) and the goal being accepted.
+    tf_msg.header.stamp = get_clock()->now() + rclcpp::Duration::from_seconds(tf_tolerance_);
     tf_msg.header.frame_id = map_frame_;
     tf_msg.child_frame_id = odom_frame_;
     tf_broadcaster_->sendTransform(tf_msg);
@@ -229,8 +459,15 @@ private:
   double update_period_, voxel_leaf_map_, voxel_leaf_scan_, voxel_leaf_display_;
   double max_correspondence_distance_, fitness_score_threshold_;
   int max_iterations_;
+  double degenerate_eigenvalue_ratio_;
+  int min_degeneracy_correspondences_;
+  double max_correction_per_update_;
+  double map2d_resolution_, map2d_z_min_, map2d_z_max_, map2d_padding_;
+  double tf_tolerance_;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr map_cloud_;
+  pcl::PointCloud<pcl::Normal>::Ptr map_normals_;
+  pcl::KdTreeFLANN<pcl::PointXYZ> map_kdtree_;
   Eigen::Matrix4f map_T_odom_ = Eigen::Matrix4f::Identity();
   std::mutex estimate_mutex_;
   rclcpp::Time last_update_{0, 0, RCL_ROS_TIME};
@@ -241,7 +478,9 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr scan_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initialpose_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_map_pub_;
+  rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr map2d_pub_;
   rclcpp::TimerBase::SharedPtr broadcast_timer_;
+  rclcpp::TimerBase::SharedPtr publish_prior_map_timer_;
 };
 
 int main(int argc, char** argv)

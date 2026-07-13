@@ -1,18 +1,16 @@
-# Nav2 params for the LIO-SAM + Ouster OS1 stack. Only the servers actually launched
-# by nav2_bringup_launch.py are configured here (planner_server, controller_server,
-# behavior_server, bt_navigator, plus their costmaps) - no amcl/map_server (LIO-SAM
-# does its own localization, no separate AMCL step) and no docking_server/
-# loopback_simulator (unused).
+# Same as nav2_params.yaml, for use with lio_sam_localization_launch.py instead of
+# lio_sam_slam_launch.py. Only global_costmap differs: nav2_params.yaml's global_costmap
+# has no static_layer because a pure-SLAM run has no prior map to load, and always
+# publishing one there (if /map never arrives) would leave that layer - and therefore
+# the whole costmap - stuck "not current", blocking planning. This file is only meant to
+# be paired with a run where pcd_map_localizer is actually publishing /map (a 2D
+# occupancy grid projected from the loaded GlobalMap.pcd, latched/transient-local like
+# nav2_map_server's own /map), so a static_layer is safe to add here permanently.
 #
-# global_frame is "map" / "odom" (LIO-SAM's own frames, published via TransformFusion
-# in imuPreintegration.cpp plus lio_sam_slam_launch.py's static map->odom link) instead
-# of fast_lio's old "camera_init" - LIO-SAM has a proper map->odom->base_link chain,
-# so no custom TF bridge script is needed here (unlike fast_lio's fastlio_tf_bridge.py).
-#
-# Our simulated Ouster OS1 only publishes PointCloud2 (no native 2D LaserScan bridge
-# exists - see diff_description/launch/rviz_joint_control.launch.py, which only
-# bridges /scan/points), so the costmaps' obstacle/voxel layers observe /ouster_points
-# directly as a PointCloud2 source instead of the more common LaserScan pattern.
+# global_costmap goes non-rolling here (dropping rolling_window/width/height) - once a
+# static_layer is present, nav2_costmap_2d auto-sizes the costmap to match the received
+# map's own width/height/resolution, the standard nav2 pattern for a known-map robot.
+# See lio_sam_bringup/README section 3b/4 for how these two pieces fit together.
 
 bt_navigator:
   ros__parameters:
@@ -165,23 +163,9 @@ local_costmap:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
         publish_voxel_map: True
-        # origin_z is a fixed world-z, not robot-relative, so the voxel column only
-        # covers [origin_z, origin_z + z_voxels*z_resolution] regardless of where the
-        # robot actually is - 16 voxels (0.8m ceiling) was enough on flat ground but
-        # too low once the robot climbs onto an elevated surface (confirmed via
-        # Nav2's own "Sensor origin ... out of map bounds" warning while on the
-        # terrain_test.world ramp platform, sensor origin z~0.85-0.87m).
-        #
-        # z_voxels was previously raised to 40 to get a 2.0m ceiling, but
-        # nav2_costmap_2d::VoxelLayer packs the whole Z column into a single 16-bit
-        # mask - z_voxels > 16 isn't a slow path, it's a hard unsupported
-        # configuration ("Error, this implementation can only support up to 16 z
-        # values"), confirmed by controller_server actually failing to activate with
-        # this set to 40 (nav2_bringup_launch.py never came up as a result - this
-        # applied to *every* run, mapping or localization, not something specific to
-        # either). Kept at the 16-voxel hard limit, with z_resolution raised instead
-        # (0.05 -> 0.125) to recover the same 2.0m ceiling (16 * 0.125 = 2.0m) within
-        # that limit - coarser vertical resolution, but still full ceiling coverage.
+        # z_voxels capped at 16 (nav2_costmap_2d::VoxelLayer's hard limit - see
+        # nav2_params.yaml's copy of this section for the full story), z_resolution
+        # raised to 0.125 to keep the same 2.0m ceiling within that limit.
         origin_z: 0.0
         z_resolution: 0.125
         z_voxels: 16
@@ -211,16 +195,15 @@ global_costmap:
       robot_radius: 0.2
       resolution: 0.05
       track_unknown_space: true
-      # rolling_window (2026-07-11) - without a static_layer (no pre-built map to
-      # load - LIO-SAM builds the map live, same as local_costmap already assumed),
-      # a non-rolling global costmap defaults to a small fixed box anchored at world
-      # origin (0,0)-(4.98,4.98) - confirmed via Nav2's own "Sensor origin ... out of
-      # map bounds" warning once the robot drove outside that box. rolling_window
-      # keeps it centered on the robot instead, same fix pattern as local_costmap.
-      rolling_window: true
-      width: 20
-      height: 20
-      plugins: ["obstacle_layer", "inflation_layer"]
+      # No rolling_window/width/height here (unlike nav2_params.yaml) - static_layer
+      # below auto-sizes the costmap to match /map's own extent once it arrives.
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map
+        # Matches pcd_map_localizer's /map QoS (see pcd_map_localizer.cpp) - the same
+        # pattern nav2_map_server itself uses for a latched, load-once map.
+        map_subscribe_transient_local: True
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True

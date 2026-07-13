@@ -123,6 +123,117 @@
     </link>
 </model>
 
+        <!-- Small ramp up, flat platform with a couple of low ridges ("gờ"), ramp back
+             down - a full up/across/down course instead of ending in a drop-off, so it's
+             a repeatable stability test (climb, cross bumps, descend under control) and
+             not a one-off impact/suspension test. Same math as terrain_test.world's ramp
+             (h = L*sin(theta), center_x = start_x + (L/2)*cos(theta), center_z =
+             (L/2)*sin(theta) + (thickness/2)*cos(theta)), just smaller and shorter: 6
+             degrees instead of 8, 1m run per ramp instead of 3m (~10.5cm height gain).
+             Placed in the empty corridor confirmed clear by direct drive-through testing:
+             spawn is x=1, the slippery_patch above ends at x=5, and the house's far wall
+             is at x~8.6 (robot visibly snagged there, y and yaw climbing while x stayed
+             put, driving straight from spawn) - the whole course (x=5.3 to x~7.989) sits
+             entirely between the two with margin on both sides. Verified end-to-end by
+             direct drive test (teleporting past the unrelated, pre-existing
+             slippery_patch via `gz service -s /world/default/set_pose`, since that
+             fixture's near-zero friction is independently flaky about letting a
+             from-rest robot coast through it, regardless of this new geometry): climbed
+             cleanly, both ridges produced the expected momentary nose-up pitch and
+             nothing else, descended cleanly, no tipping/rolling/getting stuck. -->
+        <model name="small_ramp_up">
+            <static>true</static>
+            <pose>5.797260948 0 0.057236841 0 -0.10471975512 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Flat platform at the top of small_ramp_up (z~0.104528, ramp ends at
+             x~6.294522), 0.7m long - enough room for both ridges with margin before
+             small_ramp_down starts. -->
+        <model name="small_ramp_platform">
+            <static>true</static>
+            <pose>6.644522 0 0.074528 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>0.7 2.5 0.06</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>0.7 2.5 0.06</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Two low ridges ("gờ") on the platform, like door thresholds - 2cm tall,
+             thin, spanning most of the platform width so a straight drive-through
+             can't dodge them sideways. -->
+        <model name="ridge_1">
+            <static>true</static>
+            <pose>6.45 0 0.114528 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.05 2.2 0.02</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.05 2.2 0.02</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="ridge_2">
+            <static>true</static>
+            <pose>6.85 0 0.114528 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.05 2.2 0.02</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.05 2.2 0.02</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Mirror of small_ramp_up, descending: platform ends at x~6.994522 (still at
+             height h), back down to ground at x~7.989044. Positive pitch (opposite sign
+             from small_ramp_up) since height now decreases as x increases. -->
+        <model name="small_ramp_down">
+            <static>true</static>
+            <pose>7.491782843 0 0.057236841 0 0.10471975512 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
         <model name='HouseWallB_01_001'>
             <static>true</static>
             <include>
