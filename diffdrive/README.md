@@ -125,27 +125,97 @@ Position is published on `/lio_sam/mapping/odometry` (`nav_msgs/Odometry`, frame
 `odom`), not `/diff_cont/odom` - LIO-SAM doesn't use wheel odometry at all (same
 reason wheel slip doesn't affect it, matching FAST-LIO's behavior here).
 
-**No map save/load or relocalize-against-a-saved-map mode** in this migration
-(explicitly out of scope, matching this repo's precedent - FAST-LIO's own
-`prior_map_path` relocalization was a separate follow-up request after its initial
-migration, not part of the first pass). LIO-SAM's keyframe/pose-graph architecture
-(GTSAM factors over `cloudKeyPoses3D/6D` + corner/surface submaps) makes this a
-harder patch than FAST-LIO's single-ikd-tree `prior_map_path` was - LIO-SAM ships a
-save-only `SaveMap.srv`, but loading a saved map to relocalize against would need a
-bootstrapped prior keyframe/pose state or an ICP-based initial-pose seed, budgeted
-separately if wanted later.
+To save the built map and relocalize against it later without re-mapping from
+scratch, see [step 3](#3-save-the-map-and-localize-on-a-saved-map) below.
 
-## 3. Autonomous navigation with Nav2
+## 3. Save the map and localize on a saved map
+
+LIO-SAM itself has no localization-only mode - it only ever runs live SLAM. It does
+ship a save-only `lio_sam/save_map` service, but nothing to relocalize against a
+saved map, so `lio_sam_bringup` adds a small ICP-based node
+(`pcd_map_localizer`, `lio_sam_bringup/src/pcd_map_localizer.cpp`) for that second
+half.
+
+### 3a. Save the map
+
+While step 2's `lio_sam_slam_launch.py` is still running:
+
+```bash
+ros2 service call /lio_sam/save_map lio_sam/srv/SaveMap \
+  "{resolution: 0.2, destination: '/ws_ros2_test/maps/lio_sam_house'}"
+```
+
+**`destination` is appended directly after `$HOME`, not treated as an absolute
+path** - this is upstream LIO-SAM behavior
+(`mapOptmization.cpp`'s save-map service handler does
+`std::getenv("HOME") + req->destination`, no separator inserted). Passing a full
+path like `/home/andy/ws_ros2_test/maps/lio_sam_house` here silently saves into
+`/home/andy/home/andy/ws_ros2_test/maps/lio_sam_house` instead - always give
+`destination` as the part *after* `$HOME` (leading `/`, no `$HOME` prefix), as in
+the example above. Confirmed by direct testing.
+
+This writes `GlobalMap.pcd` (what step 3b loads), `CornerMap.pcd`, `SurfMap.pcd`,
+`trajectory.pcd`, `transformations.pcd` into that directory.
+
+### 3b. Localize on the saved map
+
+```bash
+ros2 launch lio_sam_bringup lio_sam_localization_launch.py \
+  map_pcd_path:=/home/andy/ws_ros2_test/maps/lio_sam_house/GlobalMap.pcd \
+  initial_x:=0.0 initial_y:=0.0 initial_z:=0.0 initial_yaw:=0.0
+```
+
+Identical to `lio_sam_slam_launch.py` (same Gazebo bringup, same 20s settle delay,
+same 4 LIO-SAM nodes still running full local SLAM into a fresh `odom` frame) except
+the static identity `map -> odom` link is replaced by `pcd_map_localizer`: every
+`update_period` seconds (default 1.0s) it ICP-registers the current
+`/ouster_points` scan (transformed into this run's `odom` frame) against the loaded
+`GlobalMap.pcd`, and broadcasts the resulting `map -> odom` correction continuously
+at 50Hz. Rejects and keeps the previous estimate if `icp.getFitnessScore()` exceeds
+`fitness_score_threshold` (default 0.5).
+
+`initial_x/y/z/yaw` seed the ICP search - important because a fresh run's `odom`
+frame starts wherever the robot spawns *this* time, which is rarely where mapping
+originally started. Get this too wrong and ICP will converge to the wrong place in
+the map (or not converge at all). Nudge it live instead via RViz's "2D Pose
+Estimate" tool (publishes `/initialpose`, the same mechanism AMCL uses) if the
+initial guess was off.
+
+RViz shows the loaded prior map on the `/prior_map` topic (latched, so it appears
+regardless of whether RViz was already open when the node started) - it's published
+at full resolution by default, separate from the coarser copy used internally for
+ICP, so the map doesn't look sparse/blurry compared to what was actually saved.
+
+Tuning knobs (all `pcd_map_localizer` ROS params, set in
+`lio_sam_localization_launch.py`): `voxel_leaf_map`/`voxel_leaf_scan` (downsample
+leaf size for the ICP target/scan, default 0.3/0.2m - coarser is faster but less
+precise), `voxel_leaf_display` (downsample leaf size for `/prior_map` only, default
+`0.0` = full resolution; set this if the raw PCD is too large for RViz to render
+smoothly), `max_correspondence_distance` (default 1.0m), `max_iterations` (default
+50), `fitness_score_threshold` (default 0.5).
+
+**Tested manually end-to-end** (build map from a short drive in `house.world`, save,
+relaunch fresh into localization mode with the same spawn pose): ICP converged
+immediately (fitness ~0.02-0.06 at rest, up to ~0.3 mid-turn, still well under the
+0.5 rejection threshold) and `map -> odom` stayed stable (~2cm/~1° offset, matching
+the same-spawn-pose expectation) while driving back through the mapped area. Not
+yet tested: spawning from a genuinely different pose than the original mapping run
+(exercises the `initial_x/y/yaw`/`/initialpose` seeding path), or a large multi-room
+map like the "very good" one referenced in this repo's own testing notes.
+
+## 4. Autonomous navigation with Nav2
 
 Nav2 (`ros-jazzy-navigation2`, `ros-jazzy-nav2-bringup`) is installed as part of
-[Prerequisites](#prerequisites) above. Run this alongside step 2:
+[Prerequisites](#prerequisites) above. Run this alongside step 2 (or step 3 once
+localizing on a saved map):
 
 ```bash
 ros2 launch lio_sam_bringup nav2_bringup_launch.py
 ```
 
 LIO-SAM (not AMCL) provides localization directly. The TF chain is `map -> odom`
-(static identity, from step 2's launch file) `-> base_link` (dynamic, broadcast by
+(static identity from step 2's launch file, or the dynamic ICP correction from step
+3's `pcd_map_localizer` if localizing on a saved map) `-> base_link` (dynamic, broadcast by
 LIO-SAM's `imuPreintegration`/`TransformFusion`, which looks up the static
 `laser_frame -> base_link` transform from the URDF itself to correct for the lidar
 mount offset - **no custom TF bridge script is needed**, unlike FAST-LIO's
@@ -183,7 +253,9 @@ approximated as a 0.2m radius circle - fine for open-space navigation, but tune 
   Gazebo worlds, ros2_control config, and the base Gazebo bringup launch file
   (`rviz_joint_control.launch.py`) everything else includes.
 - **`lio_sam_bringup`** - the Gazebo/Nav2 integration built around LIO-SAM: the
-  `gz_lidar_to_ouster` point cloud adapter node, and SLAM/Nav2 launch files + configs.
+  `gz_lidar_to_ouster` point cloud adapter node, the `pcd_map_localizer` ICP
+  relocalization node (see [step 3](#3-save-the-map-and-localize-on-a-saved-map)),
+  and SLAM/localization/Nav2 launch files + configs.
 - **`lio_sam`** - vendored `TixiaoShan/LIO-SAM` `ros2` branch, one patch needed for
   Jazzy: `CMakeLists.txt`'s `find_package(Eigen REQUIRED)` -> `find_package(Eigen3
   REQUIRED)` (system provides `Eigen3Config.cmake`, not `EigenConfig.cmake`), plus

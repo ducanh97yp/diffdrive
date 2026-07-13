@@ -15,7 +15,7 @@ def generate_launch_description():
         name='teleop_gui',
         output='screen',
         parameters=[{
-            'linear_speed': 0.3,
+            'linear_speed': 0.5,
             'angular_speed': 1.0,
         }],
     )
