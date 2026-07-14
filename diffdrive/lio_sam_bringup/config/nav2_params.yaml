@@ -66,14 +66,23 @@ controller_server:
       ay_max: 3.0
       ay_min: -3.0
       az_max: 3.5
-      vx_std: 0.2
+      # Doubled vx_max/vx_min (0.5/-0.35 -> 1.0/-0.7) and raised wz_max (1.9 -> 2.5) for
+      # faster Nav2-commanded driving. vx_std raised well beyond a naive proportional
+      # scaling (0.8, not ~0.4) - MPPI samples control noise around the *current*
+      # velocity, not a target, so from a near-zero cruise a narrower std rarely even
+      # samples close to the new vx_max, leaving actual cruise speed unchanged despite
+      # the higher ceiling (confirmed empirically in nav2_params_localization.yaml's
+      # copy of this section - see its comment). iteration_count raised 1 -> 2 for a
+      # second refinement pass per control cycle. ax_max/az_max left as-is - already
+      # enough headroom to reach the new vx_max in ~0.33s.
+      vx_std: 0.8
       vy_std: 0.2
-      wz_std: 0.4
-      vx_max: 0.5
-      vx_min: -0.35
+      wz_std: 0.6
+      vx_max: 1.0
+      vx_min: -0.7
       vy_max: 0.5
-      wz_max: 1.9
-      iteration_count: 1
+      wz_max: 2.5
+      iteration_count: 2
       prune_distance: 1.7
       transform_tolerance: 0.1
       temperature: 0.3
@@ -132,7 +141,9 @@ controller_server:
         enabled: true
         cost_power: 1
         cost_weight: 5.0
-        offset_from_furthest: 5
+        # See nav2_params_localization.yaml's copy of this section for why this was
+        # raised from 5 - the actual lever for cruise speed, confirmed empirically.
+        offset_from_furthest: 25
         threshold_to_consider: 1.4
       PathAngleCritic:
         enabled: true
@@ -156,48 +167,34 @@ local_costmap:
       height: 3
       resolution: 0.05
       robot_radius: 0.2
-      plugins: ["voxel_layer", "inflation_layer"]
+      # voxel_layer/ObstacleLayer (z-threshold only, marks any point with z>=0 as an
+      # obstacle) replaced by elevation_traversability_layer, a custom slope-aware
+      # layer (lio_sam_bringup/src/elevation_traversability_layer.cpp) - the
+      # z-threshold approach treated the small ramps in house.world/terrain_test.world
+      # as walls, so Nav2 refused to climb them even though manual teleop (which
+      # never consults the costmap) climbed fine. Coexisting instead of replacing
+      # wouldn't fix it: CostmapLayer::updateWithMax takes the max cost across layers,
+      # so a voxel_layer/obstacle_layer still marking ramp cells 254 would always win
+      # over this layer's lower slope-derived cost regardless of plugin order. Real
+      # walls/furniture aren't lost - they still read near-90 degree local slope
+      # regardless of exact height, so they're still LETHAL_OBSTACLE under the new
+      # layer too. See lio_sam_bringup/README.md for the fuller writeup.
+      plugins: ["elevation_traversability_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         inflation_radius: 0.70
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
-        enabled: True
-        publish_voxel_map: True
-        # origin_z is a fixed world-z, not robot-relative, so the voxel column only
-        # covers [origin_z, origin_z + z_voxels*z_resolution] regardless of where the
-        # robot actually is - 16 voxels (0.8m ceiling) was enough on flat ground but
-        # too low once the robot climbs onto an elevated surface (confirmed via
-        # Nav2's own "Sensor origin ... out of map bounds" warning while on the
-        # terrain_test.world ramp platform, sensor origin z~0.85-0.87m).
-        #
-        # z_voxels was previously raised to 40 to get a 2.0m ceiling, but
-        # nav2_costmap_2d::VoxelLayer packs the whole Z column into a single 16-bit
-        # mask - z_voxels > 16 isn't a slow path, it's a hard unsupported
-        # configuration ("Error, this implementation can only support up to 16 z
-        # values"), confirmed by controller_server actually failing to activate with
-        # this set to 40 (nav2_bringup_launch.py never came up as a result - this
-        # applied to *every* run, mapping or localization, not something specific to
-        # either). Kept at the 16-voxel hard limit, with z_resolution raised instead
-        # (0.05 -> 0.125) to recover the same 2.0m ceiling (16 * 0.125 = 2.0m) within
-        # that limit - coarser vertical resolution, but still full ceiling coverage.
-        origin_z: 0.0
-        z_resolution: 0.125
-        z_voxels: 16
-        max_obstacle_height: 2.0
-        mark_threshold: 0
-        observation_sources: ouster
-        ouster:
-          topic: /ouster_points
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
-          raytrace_max_range: 3.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
+      elevation_traversability_layer:
+        plugin: "lio_sam_bringup::ElevationTraversabilityLayer"
+        point_cloud_topic: /ouster_points
+        obstacle_min_range: 0.6
+        obstacle_max_range: 2.5
+        slope_check_radius_cells: 4
+        caution_slope_deg: 15.0
+        max_slope_deg: 35.0
+        height_alpha_down: 1.0
+        height_alpha_up: 0.02
+        publish_debug_grid: True
       always_send_full_costmap: True
 
 global_costmap:
@@ -220,21 +217,19 @@ global_costmap:
       rolling_window: true
       width: 20
       height: 20
-      plugins: ["obstacle_layer", "inflation_layer"]
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
-        observation_sources: ouster
-        ouster:
-          topic: /ouster_points
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
-          raytrace_max_range: 3.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          obstacle_min_range: 0.0
+      # See local_costmap's comment above - same replacement, same reasoning.
+      plugins: ["elevation_traversability_layer", "inflation_layer"]
+      elevation_traversability_layer:
+        plugin: "lio_sam_bringup::ElevationTraversabilityLayer"
+        point_cloud_topic: /ouster_points
+        obstacle_min_range: 0.6
+        obstacle_max_range: 2.5
+        slope_check_radius_cells: 4
+        caution_slope_deg: 15.0
+        max_slope_deg: 35.0
+        height_alpha_down: 1.0
+        height_alpha_up: 0.02
+        publish_debug_grid: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0

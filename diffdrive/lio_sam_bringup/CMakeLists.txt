@@ -16,6 +16,8 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
 
 add_executable(gz_lidar_to_ouster src/gz_lidar_to_ouster.cpp)
 ament_target_dependencies(gz_lidar_to_ouster
@@ -34,5 +36,28 @@ install(DIRECTORY
   launch
   config
   DESTINATION share/${PROJECT_NAME})
+
+# nav2_costmap_2d::Layer plugin - see costmap_plugins.xml. Separate shared library,
+# installed to plain lib/ (pluginlib .so search convention), not lib/${PROJECT_NAME}/
+# where the two executables above go - no collision between the two.
+add_library(elevation_traversability_layer SHARED
+  src/elevation_traversability_layer.cpp)
+target_include_directories(elevation_traversability_layer PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(elevation_traversability_layer
+  rclcpp pluginlib nav2_costmap_2d sensor_msgs nav_msgs tf2 tf2_ros tf2_eigen pcl_ros pcl_conversions)
+
+install(TARGETS elevation_traversability_layer
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin)
+install(DIRECTORY include/
+  DESTINATION include)
+
+ament_export_include_directories(include)
+ament_export_libraries(elevation_traversability_layer)
+ament_export_dependencies(pluginlib nav2_costmap_2d sensor_msgs nav_msgs tf2 tf2_ros tf2_eigen)
+pluginlib_export_plugin_description_file(nav2_costmap_2d costmap_plugins.xml)
 
 ament_package()

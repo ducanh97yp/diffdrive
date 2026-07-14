@@ -1,0 +1,7 @@
+<class_libraries>
+  <library path="elevation_traversability_layer">
+    <class type="lio_sam_bringup::ElevationTraversabilityLayer" base_class_type="nav2_costmap_2d::Layer">
+      <description>2.5D elevation + slope-based traversability costmap layer - marks cells lethal by local slope instead of absolute point height, so gentle ramps stay traversable while walls/steps are still rejected.</description>
+    </class>
+  </library>
+</class_libraries>
