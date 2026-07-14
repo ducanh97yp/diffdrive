@@ -1,0 +1,48 @@
+# navsat_transform_node config for outdoor GPS-assisted navigation.
+#
+# Used purely as a lat/lon -> local ENU odometry format converter, NOT as a
+# TF-owning node - broadcast_utm_transform is off, so this node never
+# publishes utm->map/odom. Its odometry/gps output is remapped straight onto
+# LIO-SAM's own gpsTopic ("odometry/gpsz", see lio_sam_params.yaml) and
+# consumed by mapOptmization.cpp's existing GPSFactor - map->odom stays the
+# same static identity link lio_sam_slam_launch.py already uses indoors. See
+# lio_sam_gps_outdoor_launch.py and the plan/README for the full rationale.
+#
+# wait_for_datum: true + a static datum, NOT self-calibration - self-calibration
+# (wait_for_datum: false, no datum param) was the original design here, on the
+# theory that anchoring to LIO-SAM's own /lio_sam/mapping/odometry frame (rather
+# than the world's <spherical_coordinates> origin) avoids a constant offset
+# between GPS output and LIO-SAM's pose graph. Confirmed empirically that
+# self-calibration mode never actually latches transform_good_ in this setup -
+# navsat_transform_node's transformCallback() timer fires steadily at
+# `frequency` but odometry/gps NEVER publishes a single message, indefinitely
+# (tested 160+s). Switching to wait_for_datum: true + a static datum matching
+# smalltown.world's <spherical_coordinates> origin (33.83, -84.42) - the
+# reference basic_mobile_robot package's own proven approach - publishes
+# reliably at a solid 10Hz. Tradeoff accepted: this introduces a small (~1m,
+# the robot's spawn offset from the world origin) constant offset between GPS
+# output and LIO-SAM's own coordinate origin, well within GPSFactor's own
+# noise tolerance (gpsCovThreshold: 2.0) - a working pipeline with a small
+# known offset beats a conceptually-cleaner one that never publishes at all.
+#
+# Known harmless side effect: navsat_transform_node logs "Could not obtain
+# odom_mapping -> gps_link transform" repeatedly - it wants to correct for the
+# GPS antenna's physical lever-arm offset from the tracked body frame via TF,
+# but "odom_mapping" is only a label LIO-SAM uses as its Odometry message's
+# child_frame_id (see /lio_sam/mapping/odometry), not an actually-broadcast TF
+# frame, so the lookup always fails. It still publishes on schedule regardless
+# (confirmed) - the antenna offset (a few cm on this robot) is negligible next
+# to the GPS noise floor anyway, so this is not worth fixing.
+navsat_transform_node:
+  ros__parameters:
+    use_sim_time: true
+    frequency: 10.0
+    delay: 3.0
+    magnetic_declination_radians: 0.0
+    yaw_offset: 0.0
+    zero_altitude: true
+    broadcast_utm_transform: false
+    publish_filtered_gps: false
+    use_odometry_yaw: false
+    wait_for_datum: true
+    datum: [33.83, -84.42, 0.0]

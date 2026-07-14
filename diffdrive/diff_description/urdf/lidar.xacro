@@ -151,4 +151,73 @@
         </sensor>
     </gazebo>
 
+    <!-- GPS/GNSS receiver for outdoor navigation - top-mounted for sky visibility.
+         Sensor activation is world-plugin-driven (gz-sim-navsat-system), same
+         pattern as the lidar/IMU above, so this block is inert and harmless in
+         indoor worlds (house.world etc.) that don't load that plugin.
+         update_rate matches navsat_transform_node's frequency
+         (lio_sam_bringup/config/navsat_transform_outdoor.yaml). -->
+    <joint name="gps_joint" type="fixed">
+        <parent link="chassis"/>
+        <child link="gps_link"/>
+        <origin xyz="0 0 0.12" rpy="0 0 0"/>
+    </joint>
+
+    <link name="gps_link">
+        <visual>
+            <geometry>
+                <box size="0.02 0.02 0.01"/>
+            </geometry>
+            <material name="red"/>
+        </visual>
+        <collision>
+            <geometry>
+                <box size="0.02 0.02 0.01"/>
+            </geometry>
+        </collision>
+        <xacro:inertial_box mass="0.01" x="0.02" y="0.02" z="0.01">
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </xacro:inertial_box>
+    </link>
+
+    <gazebo reference="gps_link">
+        <material>Gazebo/Red</material>
+
+        <sensor name="navsat_sensor" type="navsat">
+            <pose>0 0 0 0 0 0</pose>
+            <topic>navsat</topic>
+            <gz_frame_id>gps_link</gz_frame_id>
+            <always_on>true</always_on>
+            <update_rate>10</update_rate>
+            <navsat>
+                <!-- Confirmed empirically that gz-sensors8's NavSat sensor applies
+                     position_sensing/horizontal's noise stddev directly in degrees,
+                     not meters, despite the SDF spec documenting units of meters -
+                     a stddev of 0.5 (intended as 0.5m) produced gps/fix readings
+                     30-50km from the configured world origin; dropping to 1e-6
+                     landed within about 1m (matching the robot spawn offset),
+                     confirming the unit mismatch. horizontal stddev below (4.5e-8
+                     deg) is a degrees-converted equivalent of about 5mm (0.005m
+                     divided by about 111320 m per deg) - dropped from an earlier
+                     ~0.5m (uncorrected-consumer-GPS-grade) after that noise level
+                     made rviz_satellite's AerialMap display (anchored to /gps/fix,
+                     see rviz_outdoor.rviz) visibly jitter every fix update (10Hz),
+                     even while the robot was stationary - the map tiles were
+                     re-centering on each noisy sample. Tradeoff - this is now closer
+                     to corrected/RTK-grade horizontal accuracy than realistic
+                     uncorrected GPS - accepted for now for a stable map display over
+                     GPS-noise realism, since GPSFactor's own correction behavior
+                     (LIO-SAM/mapOptmization.cpp) isn't the focus of this simulation.
+                     vertical noise (altitude channel) is not affected by this bug
+                     and stays in real meters, 1.5m stddev, since real GPS vertical
+                     is typically 2-3x worse than horizontal and altitude doesn't
+                     drive AerialMap's rendering. -->
+                <position_sensing>
+                    <horizontal><noise type="gaussian"><mean>0</mean><stddev>0.000000045</stddev></noise></horizontal>
+                    <vertical><noise type="gaussian"><mean>0</mean><stddev>1.5</stddev></noise></vertical>
+                </position_sensing>
+            </navsat>
+        </sensor>
+    </gazebo>
+
 </robot>

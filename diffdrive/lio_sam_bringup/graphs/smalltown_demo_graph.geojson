@@ -1,0 +1,18 @@
+{
+    "type": "FeatureCollection",
+    "name": "smalltown_demo_graph",
+    "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::3857" } },
+    "features": [
+        { "type": "Feature", "properties": { "id": 0, "frame": "map" }, "geometry": { "type": "Point", "coordinates": [ 1.0, 0.0 ] } },
+        { "type": "Feature", "properties": { "id": 1, "frame": "map" }, "geometry": { "type": "Point", "coordinates": [ 3.0, 0.0 ] } },
+        { "type": "Feature", "properties": { "id": 2, "frame": "map" }, "geometry": { "type": "Point", "coordinates": [ 6.0, 0.0 ] } },
+        { "type": "Feature", "properties": { "id": 3, "frame": "map" }, "geometry": { "type": "Point", "coordinates": [ 9.0, 0.0 ] } },
+
+        { "type": "Feature", "properties": { "id": 10, "startid": 0, "endid": 1 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 1.0, 0.0 ], [ 3.0, 0.0 ] ] ] } },
+        { "type": "Feature", "properties": { "id": 11, "startid": 1, "endid": 0 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 3.0, 0.0 ], [ 1.0, 0.0 ] ] ] } },
+        { "type": "Feature", "properties": { "id": 12, "startid": 1, "endid": 2 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 3.0, 0.0 ], [ 6.0, 0.0 ] ] ] } },
+        { "type": "Feature", "properties": { "id": 13, "startid": 2, "endid": 1 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 6.0, 0.0 ], [ 3.0, 0.0 ] ] ] } },
+        { "type": "Feature", "properties": { "id": 14, "startid": 2, "endid": 3 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 6.0, 0.0 ], [ 9.0, 0.0 ] ] ] } },
+        { "type": "Feature", "properties": { "id": 15, "startid": 3, "endid": 2 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 9.0, 0.0 ], [ 6.0, 0.0 ] ] ] } }
+    ]
+}

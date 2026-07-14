@@ -1,0 +1,36 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+    <model name="House 3">
+        <static>true</static>
+        <link name="link">
+            <collision name="collision">
+                <geometry>
+                    <mesh>
+                        <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/house 3/3/files/meshes/house_3.dae</uri>
+                        <scale>1.5 1.5 1.5</scale>
+                    </mesh>
+                </geometry>
+            </collision>
+            <visual name="visual">
+                <geometry>
+                    <mesh>
+                        <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/house 3/3/files/meshes/house_3.dae</uri>
+                        <scale>1.5 1.5 1.5</scale>
+                    </mesh>
+                </geometry>
+                <material>
+                    <script>
+                        <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/house 3/3/files/materials/scripts</uri>
+                        <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/house 3/3/files/materials/textures</uri>
+                        <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/house 3/3/files/materials/textures</uri>
+                        <name>House_3/Diffuse</name>
+                    </script>
+                    <!-- Re-enable when normal maps work again
+          <shader type="normal_map_object_space">
+            <normal_map>model://house_1/materials/textures/House_1_Normal.png</normal_map>
+          </shader-->
+                </material>
+            </visual>
+        </link>
+    </model>
+</sdf>

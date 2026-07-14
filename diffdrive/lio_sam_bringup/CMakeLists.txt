@@ -35,7 +35,14 @@ install(TARGETS
 install(DIRECTORY
   launch
   config
+  graphs
   DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS
+  scripts/latlon_graph_builder.py
+  scripts/gps_fix_from_odom.py
+  scripts/georeference_map.py
+  DESTINATION lib/${PROJECT_NAME})
 
 # nav2_costmap_2d::Layer plugin - see costmap_plugins.xml. Separate shared library,
 # installed to plain lib/ (pluginlib .so search convention), not lib/${PROJECT_NAME}/

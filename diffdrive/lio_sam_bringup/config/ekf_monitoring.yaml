@@ -1,0 +1,72 @@
+# Monitoring-only EKF (robot_localization) for outdoor GPS mode - NOT part of the
+# navigation-critical pose estimate. LIO-SAM's own GPSFactor (mapOptmization.cpp,
+# fed via odometry/gpsz - see navsat_transform_outdoor.yaml) already corrects the
+# pose graph Nav2 actually drives on; this second, separate EKF exists purely to
+# give external monitoring/GIS tools a smooth, continuously-updated position
+# signal that doesn't show the discrete "jump" LIO-SAM's own pose graph can exhibit
+# whenever GPSFactor fires a correction (the same class of artifact already
+# diagnosed and fixed for the AerialMap display).
+#
+# publish_tf: false is critical - map->odom is already owned by LIO-SAM's static
+# tf2_ros::static_transform_publisher (see lio_sam_gps_outdoor_launch.py), this
+# node must never broadcast TF or it would fight over that same edge.
+#
+# Topic names below are the robot_localization convention (generic, matching
+# /opt/ros/jazzy/share/robot_localization/params/dual_ekf_navsat_example.yaml) -
+# remapped to this repo's actual topics at the launch-file level
+# (lio_sam_gps_outdoor_launch.py), same pattern already used for
+# navsat_transform_node's remappings.
+ekf_filter_node:
+  ros__parameters:
+    use_sim_time: true
+    frequency: 10.0
+    sensor_timeout: 0.2
+    two_d_mode: true
+    publish_tf: false
+    print_diagnostics: false
+    debug: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: map
+
+    # LIO-SAM's own local-frame odometry - position + yaw + velocities, same
+    # pattern as the reference template's odom1 (GPS) fusion selection.
+    odom0: odometry/wheel
+    odom0_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,
+                   false, false, true,
+                   false, false, false]
+    odom0_queue_size: 10
+    odom0_differential: false
+    odom0_relative: false
+
+    # navsat_transform_node's ENU-converted GPS position - x/y only, same
+    # selection as the reference template's odom1_config.
+    odom1: odometry/gps
+    odom1_config: [true,  true,  false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom1_queue_size: 10
+    odom1_differential: false
+    odom1_relative: false
+
+    imu0: imu/data
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 10
+    imu0_remove_gravitational_acceleration: true
+
+    use_control: false
+
+    process_noise_covariance: [1.0, 1.0, 1e-3, 0.3, 0.3, 0.01, 0.5, 0.5, 0.1, 0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
+    initial_estimate_covariance: [1.0, 1.0, 1e-9, 1.0, 1.0, 1e-9, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]

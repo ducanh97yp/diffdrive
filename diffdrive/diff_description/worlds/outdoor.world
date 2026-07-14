@@ -1,0 +1,251 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+    <world name='default'>
+        <plugin
+          filename="gz-sim-physics-system"
+          name="gz::sim::systems::Physics">
+          <engine>
+            <filename>libgz-physics-dartsim-plugin.so</filename>
+          </engine>
+        </plugin>
+        <plugin
+            filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands">
+        </plugin>
+        <plugin
+            filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster">
+        </plugin>
+
+        <!-- Plugin for handling sensors like the LIDAR. Can khong the thieu, neu khong
+             sensor gpu_lidar trong lidar.xacro se khong sinh du lieu quet. -->
+        <plugin
+            filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+            <render_engine>ogre2</render_engine>
+        </plugin>
+
+        <!-- Plugin for IMU. Can rieng, khong nam trong gz-sim-sensors-system o tren. -->
+        <plugin
+            filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu">
+        </plugin>
+
+        <!-- GPS/GNSS system plugin - required for gps_link's <sensor type="navsat">
+             in lidar.xacro to produce data. Only loaded in outdoor worlds; indoor
+             worlds (house.world etc.) don't load this, so /gps/fix simply never
+             publishes there - see diff_description/urdf/lidar.xacro. -->
+        <plugin
+            filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat">
+        </plugin>
+
+        <!-- To add realistic gravity, do: 0.0 0.0 -9.8, otherwise do 0.0 0.0 0.0 -->
+        <gravity>0.0 0.0 -9.8</gravity>
+
+        <physics name="8ms" type="dartsim">
+            <max_step_size>0.008</max_step_size>
+            <real_time_factor>1.0</real_time_factor>
+        </physics>
+
+        <scene>
+            <ambient>0.7 0.7 0.7 1</ambient>
+            <background>0.6 0.75 0.9 1</background>
+            <shadows>false</shadows>
+            <grid>false</grid>
+            <origin_visual>false</origin_visual>
+        </scene>
+
+        <!-- Origin lat/lon for GPS simulation (gz-sim-navsat-system uses this to
+             convert local ENU position -> lat/lon/alt). Placeholder site coords -
+             trivially overridable. navsat_transform_node is self-calibrating
+             (lio_sam_bringup/config/navsat_transform_outdoor.yaml) so it does not
+             need to match this value exactly - it only needs the sensor to produce
+             *some* valid lat/lon fix, which this tag provides. -->
+        <spherical_coordinates>
+            <surface_model>EARTH_WGS84</surface_model>
+            <world_frame_orientation>ENU</world_frame_orientation>
+            <latitude_deg>21.028511</latitude_deg>
+            <longitude_deg>105.804817</longitude_deg>
+            <elevation>10</elevation>
+            <heading_deg>0</heading_deg>
+        </spherical_coordinates>
+
+        <!-- Default camera pointed at the spot where diff_robot spawns (x=1 y=0 z=0.5),
+             so the robot is in view as soon as the GUI opens. -->
+        <gui>
+            <camera name="user_camera">
+                <pose>4 -4 3 0 0.46 2.21</pose>
+            </camera>
+        </gui>
+
+        <!-- Large flat outdoor ground plane, bigger than house.world's since Nav2's
+             outdoor global costmap (nav2_params_outdoor.yaml) rolls a 60x60m window. -->
+        <model name="ground_plane">
+            <static>true</static>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>200 200</size>
+                        </plane>
+                    </geometry>
+                    <surface>
+                        <friction>
+                            <torsional>
+                                <coefficient>0.0</coefficient>
+                            </torsional>
+                        </friction>
+                    </surface>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <plane>
+                            <normal>0 0 1</normal>
+                            <size>200 200</size>
+                        </plane>
+                    </geometry>
+                    <material>
+                        <!-- Dirt/grass-ish green-brown, distinct from house.world's indoor floor -->
+                        <ambient>0.45 0.55 0.3 1</ambient>
+                        <diffuse>0.45 0.55 0.3 1</diffuse>
+                        <specular>0.05 0.05 0.05 1</specular>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Same up/across/down ramp course as house.world, reused verbatim (same
+             pose/geometry) so ElevationTraversabilityLayer gets exercised outdoors
+             too - see house.world for the full derivation/verification notes. -->
+        <model name="small_ramp_up">
+            <static>true</static>
+            <pose>5.797260948 0 0.057236841 0 -0.10471975512 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="small_ramp_platform">
+            <static>true</static>
+            <pose>6.644522 0 0.074528 0 0 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>0.7 2.5 0.06</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>0.7 2.5 0.06</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="ridge_1">
+            <static>true</static>
+            <pose>6.45 0 0.114528 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.05 2.2 0.02</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.05 2.2 0.02</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+        <model name="ridge_2">
+            <static>true</static>
+            <pose>6.85 0 0.114528 0 0 0</pose>
+            <link name="link">
+                <collision name="collision"><geometry><box><size>0.05 2.2 0.02</size></box></geometry></collision>
+                <visual name="visual"><geometry><box><size>0.05 2.2 0.02</size></box></geometry>
+                    <material><ambient>0.8 0.2 0.2 1</ambient><diffuse>0.8 0.2 0.2 1</diffuse></material>
+                </visual>
+            </link>
+        </model>
+
+        <model name="small_ramp_down">
+            <static>true</static>
+            <pose>7.491782843 0 0.057236841 0 0.10471975512 0</pose>
+            <link name="link">
+                <collision name="collision">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                </collision>
+                <visual name="visual">
+                    <geometry>
+                        <box><size>1.0 2.5 0.01</size></box>
+                    </geometry>
+                    <material>
+                        <ambient>0.6 0.6 0.6 1</ambient>
+                        <diffuse>0.6 0.6 0.6 1</diffuse>
+                    </material>
+                </visual>
+            </link>
+        </model>
+
+        <!-- Sparse outdoor obstacle stand-ins, reusing this package's existing local
+             model library (diff_description/models/) instead of AWS residential
+             furniture - no network/Fuel dependency. -->
+        <include>
+            <uri>model://cardboard_box</uri>
+            <name>cardboard_box_1</name>
+            <pose>3 3 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>model://cardboard_box</uri>
+            <name>cardboard_box_2</name>
+            <pose>10 -3 0 0 0 0.6</pose>
+        </include>
+        <include>
+            <uri>model://red_cylinder</uri>
+            <name>red_cylinder_1</name>
+            <pose>3 -3.5 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>model://red_cylinder</uri>
+            <name>red_cylinder_2</name>
+            <pose>12 4 0 0 0 0</pose>
+        </include>
+        <include>
+            <uri>model://coke_can</uri>
+            <name>coke_can_1</name>
+            <pose>-2 2 0 0 0 0</pose>
+        </include>
+
+        <light name='sun'
+            type='directional'>
+            <cast_shadows>1</cast_shadows>
+            <pose>0 0 10 0 -0 0</pose>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.2 0.2 0.2 1</specular>
+            <attenuation>
+                <range>1000</range>
+                <constant>0.9</constant>
+                <linear>0.01</linear>
+                <quadratic>0.001</quadratic>
+            </attenuation>
+            <direction>-0.5 0.1 -0.9</direction>
+        </light>
+
+    </world>
+</sdf>

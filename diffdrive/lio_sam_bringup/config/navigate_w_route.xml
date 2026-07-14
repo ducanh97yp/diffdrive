@@ -1,0 +1,51 @@
+<!--
+  Adapted from nav2_bt_navigator's stock navigate_to_pose_w_replanning_and_recovery.xml -
+  the only change is ComputePathToPose -> ComputeAndTrackRoute (nav2_route), so the
+  global path comes from the pre-authored route graph (route_server) instead of an
+  unconstrained costmap-wide plan. FollowPath/local costmap/MPPI are unchanged - both
+  nodes populate the same {path} blackboard key. use_poses="true" so a plain
+  NavigateToPose goal (e.g. clicked on the satellite map in RViz) still works -
+  ComputeAndTrackRoute snaps it to the nearest graph node internally, no node-ID
+  input required.
+
+  The route-computation retry below uses a plain ClearEntireCostmap rather than
+  WouldAPlannerRecoveryHelp (which is typed for ComputePathToPose's own error code
+  enum, not route_server's) - simpler but less precise recovery gating for that half
+  only; FollowPath's recovery is untouched from the stock tree.
+-->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector"/>
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputeAndTrackRoute">
+            <ComputeAndTrackRoute goal="{goal}" use_poses="true" path="{path}" error_code_id="{compute_path_error_code}"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}"/>
+          <Sequence>
+            <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          </Sequence>
+        </RecoveryNode>
+      </PipelineSequence>
+      <Sequence>
+        <ReactiveFallback name="RecoveryFallback">
+          <GoalUpdated/>
+          <RoundRobin name="RecoveryActions">
+            <Sequence name="ClearingActions">
+              <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+              <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+            </Sequence>
+            <Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
+            <Wait wait_duration="5.0"/>
+            <BackUp backup_dist="0.30" backup_speed="0.15" error_code_id="{backup_code_id}"/>
+          </RoundRobin>
+        </ReactiveFallback>
+      </Sequence>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

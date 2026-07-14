@@ -130,6 +130,20 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],
     )
 
+    # GPS/navsat cho tu hanh outdoor. Chi co du lieu khi world dang load co
+    # plugin gz-sim-navsat-system (vd outdoor.world) - vo hai voi cac world
+    # indoor (house.world...) khong load plugin do, topic chi khong bao gio
+    # co du lieu.
+    gps_bridge_node = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='gps_bridge',
+        output='screen',
+        arguments=['/navsat@sensor_msgs/msg/NavSatFix[gz.msgs.NavSat'],
+        remappings=[('/navsat', '/gps/fix')],
+        parameters=[{'use_sim_time': True}],
+    )
+
     # Publish TF cho cac link cua robot tu robot_description va /joint_states.
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
@@ -249,6 +263,7 @@ def generate_launch_description():
         clock_bridge_node,
         points_bridge_node,
         imu_bridge_node,
+        gps_bridge_node,
         robot_state_publisher_node,
         cmd_vel_stamper_node,
         spawn_robot_after_delay,
